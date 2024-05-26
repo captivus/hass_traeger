@@ -30,7 +30,7 @@ TIMEOUT = 60
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
 class Traeger:
-    def __init__(self, username, password, request_library):
+    def __init__(self, username, password, request_library=requests):
         self.username = username
         self.password = password
         self.mqtt_uuid = str(uuid.uuid1())
