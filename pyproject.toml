@@ -1,0 +1,26 @@
+[tool.poetry]
+name = "hass-traeger"
+version = "0.1.0"
+description = ""
+authors = ["captivus <366332+captivus@users.noreply.github.com>"]
+readme = "README.md"
+
+packages = [
+    { include = "custom_components" }
+]
+
+[tool.poetry.dependencies]
+python = ">=3.12,<3.13"
+aiohttp = "3.9.5"
+async-timeout = "4.0.3"
+homeassistant = "2024.5.5"
+paho-mqtt = "2.1.0"
+requests = "2.31.0"
+voluptuous = "0.13.1"
+
+[tool.poetry.group.dev.dependencies]
+pipreqs = "^0.5.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
