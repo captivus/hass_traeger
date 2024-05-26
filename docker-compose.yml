@@ -10,4 +10,6 @@ services:
       - "8125:8125/udp"
       - "8126:8126"
     volumes:
-      - ./data:/opt/graphite/storage
+      - ./graphite/storage:/opt/graphite/storage
+      - ./graphite/conf:/opt/graphite/conf
+      #- ./graphite/data/storage-schemas.conf:/opt/graphite/conf/storage-schemas.conf
