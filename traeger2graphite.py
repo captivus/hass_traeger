@@ -102,7 +102,7 @@ async def main():
                 # s.close()
                 for k, v in unpack_dict([], grills_status):
                     metric_path = f"traeger.{k}"
-                    send_data_to_graphite(config["graphite_host"], int(config["graphite_port"]), metric_path, v, int(last_collect))
+                    send_data_to_graphite(config["graphite_host"], int(config["graphite_port"]), metric_path, v, last_collect)
 
             except Exception as e:
                 _LOGGER.error(e)
