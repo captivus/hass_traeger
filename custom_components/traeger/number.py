@@ -1,64 +1,37 @@
-"""Number/Timer platform for Traeger."""
-from homeassistant.components.number import NumberEntity
+# This module has been adjusted to function without Home Assistant integration.
 
-from .const import (
-    DOMAIN,
-)
+# Number/Timer platform for Traeger.
 
-from .entity import TraegerBaseEntity
-
-async def async_setup_entry(hass, entry, async_add_devices):
+async def async_setup_entry(client, entry, async_add_devices):
     """Setup Number/Timer platform."""
-    client = hass.data[DOMAIN][entry.entry_id]
     grills = client.get_grills()
     for grill in grills:
         grill_id = grill["thingName"]
         async_add_devices([TraegerNumberEntity(client, grill["thingName"], "cook_timer")])
 
-class TraegerNumberEntity(NumberEntity, TraegerBaseEntity):
+class TraegerNumberEntity:
     """Traeger Number/Timer Value class."""
 
     def __init__(self, client, grill_id, devname):
-        super().__init__(client, grill_id)
+        self.client = client
+        self.grill_id = grill_id
         self.devname = devname
-        self.grill_register_callback()
-
-    # Generic Properties
-    @property
-    def name(self):
-        """Return the name of the grill"""
-        if self.grill_details is None:
-            return f"{self.grill_id}_{self.devname}"
-        name = self.grill_details["friendlyName"]
-        return f"{name} {self.devname.capitalize()}"
-
-    @property
-    def unique_id(self):
-        return f"{self.grill_id}_{self.devname}"
-
-    @property
-    def icon(self):
-        return "mdi:timer"
 
     # Timer Properties
-    @property
     def native_value(self):
-        if self.grill_state is None:
+        if self.client.get_state_for_device(self.grill_id) is None:
             return 0
-        end_time = self.grill_state[f"{self.devname}_end"]
-        start_time = self.grill_state[f"{self.devname}_start"]
+        end_time = self.client.get_state_for_device(self.grill_id)[f"{self.devname}_end"]
+        start_time = self.client.get_state_for_device(self.grill_id)[f"{self.devname}_start"]
         tot_time = (end_time - start_time) / 60
         return tot_time
 
-    @property
     def native_min_value(self):
         return 1
 
-    @property
     def native_max_value(self):
         return 1440
 
-    @property
     def native_unit_of_measurement(self):
         return "min"
 

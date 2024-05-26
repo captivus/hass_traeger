@@ -21,7 +21,6 @@ import socket
 import logging
 import async_timeout
 import aiohttp
-import homeassistant.const
 
 
 CLIENT_ID = "2fuohjtqv1e63dckp5v84rau0j"
@@ -31,15 +30,14 @@ TIMEOUT = 60
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
 class traeger:
-    def __init__(self, username, password, hass, request_library):
+    def __init__(self, username, password, request_library):
         self.username = username
         self.password = password
         self.mqtt_uuid = str(uuid.uuid1())
         self.mqtt_thread_running = False
         self.mqtt_thread_refreshing = False
         self.grills_active = False
-        self.hass = hass
-        self.loop = hass.loop
+        self.loop = asyncio.get_event_loop()
         self.task = None
         self.mqtt_url = None
         self.mqtt_client = None
@@ -173,7 +171,6 @@ class traeger:
             _LOGGER.debug(f"ReInit Client")
         else:
             self.mqtt_client = mqtt.Client(transport="websockets")
-            #self.mqtt_client.on_log = self.mqtt_onlog                  #logging passed via enable_logger this would be redundant.
             self.mqtt_client.on_connect = self.mqtt_onconnect
             self.mqtt_client.on_connect_fail = self.mqtt_onconnectfail
             self.mqtt_client.on_subscribe = self.mqtt_onsubscribe
@@ -205,9 +202,6 @@ class traeger:
             self.mqtt_thread_running = True
             self.mqtt_thread.start()
 
-#===========================Paho MQTT Functions=======================================================
-    def mqtt_onlog(self, client, userdata, level, buf):
-        _LOGGER.debug(f"OnLog Callback. Client:{client} userdata:{userdata} level:{level} buf:{buf}")
     def mqtt_onconnect(self, client, userdata, flags, rc):
         _LOGGER.info("Grill Connected")
         for grill in self.grills:
@@ -217,17 +211,14 @@ class traeger:
             client.subscribe(
                 ("prod/thing/update/{}".format(grill_id), 1))
     def mqtt_onconnectfail(self, client, userdata):
-        _LOGGER.debug(f"Connect Fail Callback. Client:{client} userdata:{userdata}")
         _LOGGER.warning("Grill Connect Failed! MQTT Client Kill.")
-        self.hass.async_create_task(self.kill())                    #Shutdown if we arn't getting anywhere.
+        asyncio.run(self.kill())                    #Shutdown if we arn't getting anywhere.
     def mqtt_onsubscribe(self, client, userdata, mid, granted_qos):
-        _LOGGER.debug(f"OnSubscribe Callback. Client:{client} userdata:{userdata} mid:{mid} granted_qos:{granted_qos}")
         for grill in self.grills:
             grill_id = grill["thingName"]
             if grill_id in self.grill_status:
                 del self.grill_status[grill_id]
-            #self.update_state(grill_id)
-            self.hass.async_create_task(self.update_state(grill_id))
+            asyncio.run(self.update_state(grill_id))
     def mqtt_onmessage(self, client, userdata, message):
         _LOGGER.debug("grill_message: message.topic = %s, message.payload = %s", message.topic, message.payload)
         _LOGGER.info(f"Token Time Remaining:{self.token_remaining()} MQTT Time Remaining:{self.mqtt_url_remaining()}")
@@ -246,21 +237,6 @@ class traeger:
                     if state["connected"]:
                         if 4 <= state["system_status"] <= 8:
                             self.grills_active = True
-    def mqtt_onpublish(self, client, userdata, mid):
-        _LOGGER.debug(f"OnPublish Callback. Client:{client} userdata:{userdata} mid:{mid}")
-    def mqtt_onunsubscribe(self, client, userdata, mid):
-        _LOGGER.debug(f"OnUnsubscribe Callback. Client:{client} userdata:{userdata} mid:{mid}")
-    def mqtt_ondisconnect(self, client, userdata, rc):
-        _LOGGER.debug(f"OnDisconnect Callback. Client:{client} userdata:{userdata} rc:{rc}")
-    def mqtt_onsocketopen(self, client, userdata, sock):
-        _LOGGER.debug(f"Sock.Open.Report...Client: {client} UserData: {userdata} Sock: {sock}")
-    def mqtt_onsocketclose(self, client, userdata, sock):
-        _LOGGER.debug(f"Sock.Clse.Report...Client: {client} UserData: {userdata} Sock: {sock}")
-    def mqtt_onsocketregisterwrite(self, client, userdata, sock):
-        _LOGGER.debug(f"Sock.Regi.Write....Client: {client} UserData: {userdata} Sock: {sock}")
-    def mqtt_onsocketunregisterwrite(self, client, userdata, sock):
-        _LOGGER.debug(f"Sock.UnRg.Write....Client: {client} UserData: {userdata} Sock: {sock}")
-#===========================/Paho MQTT Functions=======================================================
 
     def get_state_for_device(self, thingName):
         if thingName not in self.grill_status:
@@ -295,11 +271,11 @@ class traeger:
     def get_units_for_device(self, thingName):
         state = self.get_state_for_device(thingName)
         if state is None:
-            return homeassistant.const.TEMP_FAHRENHEIT
+            return "°F"
         if state["units"] == 0:
-            return homeassistant.const.TEMP_CELSIUS
+            return "°C"
         else:
-            return homeassistant.const.TEMP_FAHRENHEIT
+            return "°F"
 
     def get_details_for_accessory(self, thingName, accessory_id):
         state = self.get_state_for_device(thingName)
@@ -318,7 +294,7 @@ class traeger:
 
     def syncmain(self):
         _LOGGER.debug(f"@Call_Later SyncMain CreatingTask for async Main.")
-        self.hass.async_create_task(self.main())
+        asyncio.create_task(self.main())
 
     async def main(self):
         _LOGGER.debug(f"Current Main Loop Time: {time.time()}")

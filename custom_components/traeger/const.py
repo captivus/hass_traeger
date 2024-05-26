@@ -1,9 +1,5 @@
-from homeassistant.const import (
-    TEMP_CELSIUS,
-    TEMP_FAHRENHEIT,
-)
-
 """Constants for traeger."""
+
 # Base component constants
 NAME = "Traeger"
 DOMAIN = "traeger"
@@ -49,76 +45,76 @@ GRILL_MIN_TEMP_F = 165
 # Probe Preset Modes
 PROBE_PRESET_MODES = {
         "Chicken": {
-            TEMP_FAHRENHEIT: 165,
-            TEMP_CELSIUS: 74,
+            "Fahrenheit": 165,
+            "Celsius": 74,
             },
         "Turkey": {
-            TEMP_FAHRENHEIT: 165,
-            TEMP_CELSIUS: 74,
+            "Fahrenheit": 165,
+            "Celsius": 74,
             },
         "Beef (Rare)": {
-            TEMP_FAHRENHEIT: 125,
-            TEMP_CELSIUS: 52,
+            "Fahrenheit": 125,
+            "Celsius": 52,
             },
         "Beef (Medium Rare)": {
-            TEMP_FAHRENHEIT: 135,
-            TEMP_CELSIUS: 57,
+            "Fahrenheit": 135,
+            "Celsius": 57,
             },
         "Beef (Medium)": {
-            TEMP_FAHRENHEIT: 140,
-            TEMP_CELSIUS: 60,
+            "Fahrenheit": 140,
+            "Celsius": 60,
             },
         "Beef (Medium Well)": {
-            TEMP_FAHRENHEIT: 145,
-            TEMP_CELSIUS: 63,
+            "Fahrenheit": 145,
+            "Celsius": 63,
             },
         "Beef (Well Done)": {
-            TEMP_FAHRENHEIT: 155,
-            TEMP_CELSIUS: 68,
+            "Fahrenheit": 155,
+            "Celsius": 68,
             },
         "Beef (Ground)": {
-            TEMP_FAHRENHEIT: 160,
-            TEMP_CELSIUS: 71,
+            "Fahrenheit": 160,
+            "Celsius": 71,
             },
         "Lamb (Rare)": {
-            TEMP_FAHRENHEIT: 125,
-            TEMP_CELSIUS: 52,
+            "Fahrenheit": 125,
+            "Celsius": 52,
             },
         "Lamb (Medium Rare)": {
-            TEMP_FAHRENHEIT: 135,
-            TEMP_CELSIUS: 57,
+            "Fahrenheit": 135,
+            "Celsius": 57,
             },
         "Lamb (Medium)": {
-            TEMP_FAHRENHEIT: 140,
-            TEMP_CELSIUS: 60,
+            "Fahrenheit": 140,
+            "Celsius": 60,
             },
         "Lamb (Medium Well)": {
-            TEMP_FAHRENHEIT: 145,
-            TEMP_CELSIUS: 63,
+            "Fahrenheit": 145,
+            "Celsius": 63,
             },
         "Lamb (Well Done)": {
-            TEMP_FAHRENHEIT: 155,
-            TEMP_CELSIUS: 68,
+            "Fahrenheit": 155,
+            "Celsius": 68,
             },
         "Lamb (Ground)": {
-            TEMP_FAHRENHEIT: 160,
-            TEMP_CELSIUS: 71,
+            "Fahrenheit": 160,
+            "Celsius": 71,
             },
         "Pork (Medium Rare)": {
-            TEMP_FAHRENHEIT: 135,
-            TEMP_CELSIUS: 57,
+            "Fahrenheit": 135,
+            "Celsius": 57,
             },
         "Pork (Medium)": {
-            TEMP_FAHRENHEIT: 140,
-            TEMP_CELSIUS: 60,
+            "Fahrenheit": 140,
+            "Celsius": 60,
             },
         "Pork (Well Done)": {
-            TEMP_FAHRENHEIT: 155,
-            TEMP_CELSIUS: 68,
+            "Fahrenheit": 155,
+            "Celsius": 68,
             },
         "Fish": {
-            TEMP_FAHRENHEIT: 145,
-            TEMP_CELSIUS: 63,
+            "Fahrenheit": 145,
+            "Celsius": 63,
             },
         }
 
