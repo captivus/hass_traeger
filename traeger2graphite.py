@@ -1,4 +1,3 @@
-
 #!/usr/bin/python3
 # coding=utf-8
 
@@ -10,6 +9,7 @@ This file is part of the traeger python library,
 and is released under the "GNU GENERAL PUBLIC LICENSE Version 2". 
 Please see the LICENSE file that should have been included as part of this package.
 """
+
 import os
 import getpass
 import pprint
@@ -18,12 +18,16 @@ import json
 import time
 import socket
 import asyncio
+import logging
 
 from dotenv import load_dotenv
-
 from traeger.traeger import Traeger
+import aiohttp
 
 pp = pprint.PrettyPrinter(indent=4)
+
+_LOGGER = logging.getLogger(__name__)
+logging.basicConfig(level=logging.DEBUG)
 
 def unpack(base, value):
     if isinstance(value, numbers.Number):
@@ -56,7 +60,6 @@ def unpack_dict(base, thedict):
     return result
 
 async def main():
-
     load_dotenv()
 
     config = {}
@@ -65,40 +68,41 @@ async def main():
     config["graphite_port"] = os.getenv("GRAPHITE_PORT") or input("graphite port:")
     config["graphite_host"] = os.getenv("GRAPHITE_HOST") or input("graphite host:")
 
-    #open(os.path.expanduser("~/.traeger"),"w").write(json.dumps(config))
+    traeger = Traeger(config['username'], config['password'], request_library=aiohttp.ClientSession)
 
-    traeger = Traeger(config['username'], config['password'])
-    
-    while True:
-        last_collect = time.time()
-        grills = traeger.get_grills()
-        grills_status = await traeger.get_grill_status()
-        for grill in grills:
-            if grill["thingName"] not in grills_status:
-                print ("Missing Data for {}".format(grill["thingName"]))
+    try:
+        while True:
+            last_collect = time.time()
+            _LOGGER.debug("Collecting grill data")
+            grills = traeger.get_grills()
+            _LOGGER.debug(f"Grills: {grills}")
+            grills_status = await traeger.get_grill_status()
+            _LOGGER.debug(f"Grills Status: {grills_status}")
+            for grill in grills:
+                if grill["thingName"] not in grills_status:
+                    _LOGGER.warning(f"Missing Data for {grill['thingName']}")
 
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.connect((config["graphite_host"], int(config["graphite_port"])))
-            for k,v in unpack_dict([], grills_status):
-                s.send("traeger.{} {} {}\r\n".format(k, v, int(last_collect)).encode())
-            s.close()
-        except Exception as e:
-            print (e)
-        next_collect = last_collect + 60
-        until_collect = next_collect - time.time()
-        if until_collect > 0:
-            print ("Sleeeping {}".format(until_collect))
-            time.sleep(until_collect)
-        else:
-            print ("Late for next collection {}".format(until_collect))
-    
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.connect((config["graphite_host"], int(config["graphite_port"])))
+                for k, v in unpack_dict([], grills_status):
+                    message = f"traeger.{k} {v} {int(last_collect)}\r\n"
+                    _LOGGER.debug(f"Sending to Graphite: {message}")
+                    s.send(message.encode())
+                s.close()
+            except Exception as e:
+                _LOGGER.error(e)
+
+            next_collect = last_collect + 60
+            until_collect = next_collect - time.time()
+            if until_collect > 0:
+                _LOGGER.debug(f"Sleeeping {until_collect}")
+                time.sleep(until_collect)
+            else:
+                _LOGGER.debug(f"Late for next collection {until_collect}")
+
+    finally:
+        await traeger.close()
+
 if __name__ == "__main__":
     asyncio.run(main())
-
-#t = traeger.traeger(input("user:"), getpass.getpass())
-#grills = t.get_grill_status()
-#for k,v in unpack_dict([], grills): 
-#    print("{} {}".format(k, v))
-
-        

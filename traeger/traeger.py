@@ -491,3 +491,8 @@ class Traeger:
 
         except Exception as exception:  # pylint: disable=broad-except
             _LOGGER.error("Something really wrong happened! - %s", exception)
+
+    async def close(self):
+        if self.session:
+            await self.session.close()
+        _LOGGER.debug("Session closed")
