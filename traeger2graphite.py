@@ -59,6 +59,13 @@ def unpack_dict(base, thedict):
             result.extend(unpack(newbase, v))
     return result
 
+def send_data_to_graphite(host, port, metric_path, value, timestamp):
+    message = f"{metric_path} {value} {timestamp}\n"
+    _LOGGER.debug(f"Sending data to Graphite: {message}")
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.connect((host, port))
+        sock.sendall(message.encode('utf-8'))
+
 async def main():
     load_dotenv()
 
@@ -83,13 +90,17 @@ async def main():
                     _LOGGER.warning(f"Missing Data for {grill['thingName']}")
 
             try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.connect((config["graphite_host"], int(config["graphite_port"])))
+                # s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                # s.connect((config["graphite_host"], int(config["graphite_port"])))
+                # for k, v in unpack_dict([], grills_status):
+                #     message = f"traeger.{k} {v} {int(last_collect)}\r\n"
+                #     _LOGGER.debug(f"Sending to Graphite: {message}")
+                #     s.send(message.encode())
+                # s.close()
                 for k, v in unpack_dict([], grills_status):
-                    message = f"traeger.{k} {v} {int(last_collect)}\r\n"
-                    _LOGGER.debug(f"Sending to Graphite: {message}")
-                    s.send(message.encode())
-                s.close()
+                    metric_path = f"traeger.{k}"
+                    send_data_to_graphite(config["graphite_host"], int(config["graphite_port"]), metric_path, v, int(last_collect))
+
             except Exception as e:
                 _LOGGER.error(e)
 
