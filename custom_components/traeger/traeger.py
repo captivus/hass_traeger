@@ -238,6 +238,21 @@ class Traeger:
                         if 4 <= state["system_status"] <= 8:
                             self.grills_active = True
 
+    def mqtt_onpublish(self, client, userdata, mid):
+        _LOGGER.debug(f"OnPublish Callback. Client:{client} userdata:{userdata} mid:{mid}")
+    def mqtt_onunsubscribe(self, client, userdata, mid):
+        _LOGGER.debug(f"OnUnsubscribe Callback. Client:{client} userdata:{userdata} mid:{mid}")
+    def mqtt_ondisconnect(self, client, userdata, rc):
+        _LOGGER.debug(f"OnDisconnect Callback. Client:{client} userdata:{userdata} rc:{rc}")
+    def mqtt_onsocketopen(self, client, userdata, sock):
+        _LOGGER.debug(f"Sock.Open.Report...Client: {client} UserData: {userdata} Sock: {sock}")
+    def mqtt_onsocketclose(self, client, userdata, sock):
+        _LOGGER.debug(f"Sock.Clse.Report...Client: {client} UserData: {userdata} Sock: {sock}")
+    def mqtt_onsocketregisterwrite(self, client, userdata, sock):
+        _LOGGER.debug(f"Sock.Regi.Write....Client: {client} UserData: {userdata} Sock: {sock}")
+    def mqtt_onsocketunregisterwrite(self, client, userdata, sock):
+        _LOGGER.debug(f"Sock.UnRg.Write....Client: {client} UserData: {userdata} Sock: {sock}")
+
     def get_state_for_device(self, thingName):
         if thingName not in self.grill_status:
             return None
