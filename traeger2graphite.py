@@ -81,10 +81,13 @@ async def main():
         while True:
             last_collect = time.time()
             _LOGGER.debug("Collecting grill data")
-            grills = traeger.get_grills()
-            _LOGGER.debug(f"Grills: {grills}")
+
             grills_status = await traeger.get_grill_status()
             _LOGGER.debug(f"Grills Status: {grills_status}")
+
+            grills = await traeger.get_grills()
+            _LOGGER.debug(f"Grills: {grills}")
+
             for grill in grills:
                 if grill["thingName"] not in grills_status:
                     _LOGGER.warning(f"Missing Data for {grill['thingName']}")

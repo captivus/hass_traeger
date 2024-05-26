@@ -142,8 +142,12 @@ class Traeger:
         json = await self.get_user_data()
         self.grills = json["things"]
 
-    def get_grills(self):
+    async def get_grills(self):
+        await self.update_grills()
         return self.grills
+
+    # def get_grills(self):
+    #     return self.grills
 
     def set_callback_for_grill(self, grill_id, callback):
         if grill_id not in self.grill_callbacks:
@@ -192,6 +196,67 @@ class Traeger:
                     time.sleep(1)
         _LOGGER.debug(f"Should be the end of the thread.")
 
+    def on_connect(self, client, userdata, flags, rc):
+        print(f"Connected with result code {rc}")
+        for grill in self.grills:
+            topic = f"prod/thing/update/{grill['thingName']}"
+            client.subscribe((topic, 1))
+
+    def on_disconnect(self, client, userdata, rc):
+        print(f"Disconnected with result code {rc}")
+
+    def on_message(self, client, userdata, msg):
+        print(f"Received message: {msg.topic} {msg.payload}")
+        try:
+            payload = json.loads(msg.payload)
+            thing_name = payload.get("thingName")
+            if thing_name:
+                self.grill_status[thing_name] = payload
+        except json.JSONDecodeError as e:
+            print(f"Failed to decode JSON: {e}")
+
+    async def get_grill_status(self, timeout=10):
+        await self.get_grills()  # Fetch grills from the API
+        client = await self.get_mqtt_client()
+        for grill in self.grills:
+            if grill["thingName"] in self.grill_status:
+                del self.grill_status[grill["thingName"]]
+            client.subscribe(("prod/thing/update/{}".format(grill["thingName"]), 1))
+        for grill in self.grills:
+            remaining = timeout
+            while not grill["thingName"] in self.grill_status and remaining > 0:
+                await asyncio.sleep(1)
+                remaining -= 1
+        return self.grill_status
+
+    # async def get_grill_status(self, timeout=10):
+    #     await self.get_grills()  # Fetch grills from the API
+    #     client = await self.get_mqtt_client()
+    #     for grill in self.grills:
+    #         if grill["thingName"] in self.grill_status:
+    #             del self.grill_status[grill["thingName"]]
+    #         client.subscribe(("prod/thing/update/{}".format(grill["thingName"]), 1))
+    #     for grill in self.grills:
+    #         remaining = timeout
+    #         while not grill["thingName"] in self.grill_status and remaining > 0:
+    #             await asyncio.sleep(1)
+    #             remaining -= 1
+    #     return self.grill_status
+    
+    # async def get_grill_status(self, timeout=10):
+    #     client = await self.get_mqtt_client()
+    #     for grill in self.grills:
+    #         if grill["thingName"] in self.grill_status:
+    #             del self.grill_status[grill["thingName"]]
+    #         client.subscribe(("prod/thing/update/{}".format(grill["thingName"]), 1))
+    #     for grill in self.grills:
+    #         remaining = timeout
+    #         while not grill["thingName"] in self.grill_status and remaining > 0:
+    #             time.sleep(1)
+    #             remaining -= 1
+    #     return self.grill_status
+
+    
     async def get_mqtt_client(self):
         await self.refresh_mqtt_url()
         if self.mqtt_client != None:
@@ -202,9 +267,8 @@ class Traeger:
             self.mqtt_client.on_connect_fail = self.mqtt_onconnectfail
             self.mqtt_client.on_subscribe = self.mqtt_onsubscribe
             self.mqtt_client.on_message = self.mqtt_onmessage
-            if (
-                _LOGGER.level <= 10
-            ):  # Add these callbacks only if our logging is Debug or less.
+
+            if (_LOGGER.level <= 10):  # Add these callbacks only if our logging is Debug or less.
                 self.mqtt_client.enable_logger(_LOGGER)
                 self.mqtt_client.on_publish = (
                     self.mqtt_onpublish
@@ -232,11 +296,20 @@ class Traeger:
             path="{}?{}".format(mqtt_parts.path, mqtt_parts.query), headers=headers
         )
         _LOGGER.info(f"Thread Active Count:{threading.active_count()}")
-        self.mqtt_client.connect(mqtt_parts.netloc, 443, keepalive=300)
+        try:
+            print(f"Connecting to {mqtt_parts.netloc} on port 443...")
+            self.mqtt_client.connect(mqtt_parts.netloc, 443, keepalive=300)
+            print(f"Connection successful! Connected to {mqtt_parts.netloc} on port 443.")
+
+        except Exception as e:
+            print(f"Connection Failed: {e}")
+
         if self.mqtt_thread_running == False:
             self.mqtt_thread = threading.Thread(target=self._mqtt_connect_func)
             self.mqtt_thread_running = True
             self.mqtt_thread.start()
+        
+        return self.mqtt_client
 
     def mqtt_onconnect(self, client, userdata, flags, rc):
         _LOGGER.info("Grill Connected")
@@ -373,19 +446,6 @@ class Traeger:
             grill_id = message.topic[len("prod/thing/update/") :]
             self.grill_status[grill_id] = json.loads(message.payload)
 
-    async def get_grill_status(self, timeout=10):
-        client = await self.get_mqtt_client()
-        for grill in self.grills:
-            if grill["thingName"] in self.grill_status:
-                del self.grill_status[grill["thingName"]]
-            client.subscribe(("prod/thing/update/{}".format(grill["thingName"]), 1))
-        for grill in self.grills:
-            remaining = timeout
-            while not grill["thingName"] in self.grill_status and remaining > 0:
-                time.sleep(1)
-                remaining -= 1
-        return self.grill_status
-
     async def start(self, delay):
         await self.update_grills()
         self.grills_active = True
@@ -442,7 +502,7 @@ class Traeger:
         """Get information from the API."""
         _LOGGER.debug(f"Making {method} request to {url} with data {data} and headers {headers}")
         try:
-            if self.request == aiohttp.ClientSession:
+            if aiohttp.ClientSession:
                 async with async_timeout.timeout(TIMEOUT):
                     if method == "get":
                         async with self.session.get(url, headers=headers) as response:
@@ -460,37 +520,62 @@ class Traeger:
                             _LOGGER.debug(f"Received response: {data}")
                             return json.loads(data)
 
-            else:  # Handling requests library
-                if method == "get":
-                    response = self.request.get(url, headers=headers, timeout=TIMEOUT)
-                    response.raise_for_status()
-                    _LOGGER.debug(f"Received response: {response.text}")
-                    return response.json()
-
-                elif method == "post_raw":
-                    self.request.post(url, headers=headers, json=data, timeout=TIMEOUT)
-                    return {}  # Handle post_raw response if needed
-
-                elif method == "post":
-                    response = self.request.post(url, headers=headers, json=data, timeout=TIMEOUT)
-                    response.raise_for_status()
-                    _LOGGER.debug(f"Received response: {response.text}")
-                    return response.json()
-
-        except requests.RequestException as exception:
+        except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, TypeError, Exception) as exception:
             _LOGGER.error("Error fetching information from %s - %s", url, exception)
 
-        except asyncio.TimeoutError as exception:
-            _LOGGER.error("Timeout error fetching information from %s - %s", url, exception)
+    # async def api_wrapper(self, method: str, url: str, data: dict = {}, headers: dict = {}) -> dict:
+    #     """Get information from the API."""
+    #     _LOGGER.debug(f"Making {method} request to {url} with data {data} and headers {headers}")
+    #     try:
+    #         if self.request == aiohttp.ClientSession:
+    #             async with async_timeout.timeout(TIMEOUT):
+    #                 if method == "get":
+    #                     async with self.session.get(url, headers=headers) as response:
+    #                         data = await response.read()
+    #                         _LOGGER.debug(f"Received response: {data}")
+    #                         return json.loads(data)
 
-        except (KeyError, TypeError) as exception:
-            _LOGGER.error("Error parsing information from %s - %s\n%s", url, exception, traceback.format_exc())
+    #                 if method == "post_raw":
+    #                     async with self.session.post(url, headers=headers, json=data):
+    #                         return {}  # Handle post_raw response if needed
 
-        except (aiohttp.ClientError, socket.gaierror) as exception:
-            _LOGGER.error("Error fetching information from %s - %s", url, exception)
+    #                 elif method == "post":
+    #                     async with self.session.post(url, headers=headers, json=data) as response:
+    #                         data = await response.read()
+    #                         _LOGGER.debug(f"Received response: {data}")
+    #                         return json.loads(data)
 
-        except Exception as exception:  # pylint: disable=broad-except
-            _LOGGER.error("Something really wrong happened! - %s", exception)
+    #         else:  # Handling requests library
+    #             if method == "get":
+    #                 response = self.request.get(url, headers=headers, timeout=TIMEOUT)
+    #                 response.raise_for_status()
+    #                 _LOGGER.debug(f"Received response: {response.text}")
+    #                 return response.json()
+
+    #             elif method == "post_raw":
+    #                 self.request.post(url, headers=headers, json=data, timeout=TIMEOUT)
+    #                 return {}  # Handle post_raw response if needed
+
+    #             elif method == "post":
+    #                 response = self.request.post(url, headers=headers, json=data, timeout=TIMEOUT)
+    #                 response.raise_for_status()
+    #                 _LOGGER.debug(f"Received response: {response.text}")
+    #                 return response.json()
+
+    #     except requests.RequestException as exception:
+    #         _LOGGER.error("Error fetching information from %s - %s", url, exception)
+
+    #     except asyncio.TimeoutError as exception:
+    #         _LOGGER.error("Timeout error fetching information from %s - %s", url, exception)
+
+    #     except (KeyError, TypeError) as exception:
+    #         _LOGGER.error("Error parsing information from %s - %s\n%s", url, exception, traceback.format_exc())
+
+    #     except (aiohttp.ClientError, socket.gaierror) as exception:
+    #         _LOGGER.error("Error fetching information from %s - %s", url, exception)
+
+    #     except Exception as exception:  # pylint: disable=broad-except
+    #         _LOGGER.error("Something really wrong happened! - %s", exception)
 
     async def close(self):
         if self.session:
