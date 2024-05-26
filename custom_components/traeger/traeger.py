@@ -29,7 +29,7 @@ TIMEOUT = 60
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
-class traeger:
+class Traeger:
     def __init__(self, username, password, request_library):
         self.username = username
         self.password = password
