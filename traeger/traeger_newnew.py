@@ -1,43 +1,29 @@
-"""
-Library to interact with traeger grills
-
-Copyright 2020 by Keith Baker All rights reserved.
-This file is part of the traeger python library,
-and is released under the "GNU GENERAL PUBLIC LICENSE Version 2".
-Please see the LICENSE file that should have been included as part of this package.
-"""
-
 import asyncio
 import datetime
 import json
 import logging
-import socket
 import ssl
 import threading
 import time
-import traceback
 import urllib
 import uuid
 
 import aiohttp
 import async_timeout
 import paho.mqtt.client as mqtt
-import requests
 
 CLIENT_ID = "2fuohjtqv1e63dckp5v84rau0j"
 TIMEOUT = 60
-
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
 
 class Traeger:
-    def __init__(self, username, password, request_library=requests):
+    def __init__(self, username, password, request_library=aiohttp.ClientSession):
         self.username = username
         self.password = password
         self.mqtt_uuid = str(uuid.uuid1())
         self.mqtt_thread_running = False
-        self.mqtt_thread_refreshing = False
         self.grills = []
         self.grill_status = {}
         self.grills_active = False
@@ -45,22 +31,19 @@ class Traeger:
         self.task = None
         self.mqtt_url = None
         self.mqtt_client = None
-        self.grill_status = {}
         self.access_token = None
         self.token = None
-        self.refresh_token_value = None  # Initialize here
+        self.refresh_token_value = None
         self.token_expires = 0
         self.mqtt_url_expires = time.time()
         self.request = request_library
-        if request_library == aiohttp.ClientSession:
-            self.session = aiohttp.ClientSession()
-        else:
-            self.session = None
+        self.session = None
         self.grill_callbacks = {}
         self.mqtt_client_inloop = False
         self.autodisconnect = False
 
     async def initialize(self):
+        self.session = aiohttp.ClientSession()
         await self.do_cognito()
 
     def token_remaining(self):
@@ -107,7 +90,7 @@ class Traeger:
                 'ClientId': CLIENT_ID,
                 'AuthFlow': 'REFRESH_TOKEN_AUTH',
                 'AuthParameters': {
-                    'REFRESH_TOKEN': self.refresh_token_value  # Use renamed attribute
+                    'REFRESH_TOKEN': self.refresh_token_value
                 }
             }
             headers = {
@@ -147,7 +130,6 @@ class Traeger:
             _LOGGER.error("Failed to get user data.")
         return user_data
 
-
     async def send_command(self, thingName, command):
         _LOGGER.debug("Send Command Topic: %s, Send Command: %s", thingName, command)
         await self.refresh_token()
@@ -185,19 +167,15 @@ class Traeger:
 
     async def update_grills(self):
         json_data = await self.get_user_data()
-        if json_data and "things" in json_data:
+        if (json_data is not None) and ("things" in json_data):
             self.grills = json_data["things"]
         else:
             _LOGGER.error("Failed to get grills: %s", json_data)
-            self.grills = []  # Default to an empty list if the response is invalid
-
+            self.grills = []
 
     async def get_grills(self):
         await self.update_grills()
         return self.grills
-
-    # def get_grills(self):
-    #     return self.grills
 
     def set_callback_for_grill(self, grill_id, callback):
         if grill_id not in self.grill_callbacks:
@@ -250,145 +228,16 @@ class Traeger:
             loop.close()
         _LOGGER.debug(f"Should be the end of the thread.")
 
-    def on_connect(self, client, userdata, flags, rc):
-        print(f"Connected with result code {rc}")
-        for grill in self.grills:
-            topic = f"prod/thing/update/{grill['thingName']}"
-            client.subscribe((topic, 1))
-
-    def on_disconnect(self, client, userdata, rc):
-        print(f"Disconnected with result code {rc}")
-
-    def on_message(self, client, userdata, msg):
-        print(f"Received message: {msg.topic} {msg.payload}")
-        try:
-            payload = json.loads(msg.payload)
-            thing_name = payload.get("thingName")
-            if thing_name:
-                self.grill_status[thing_name] = payload
-        except json.JSONDecodeError as e:
-            print(f"Failed to decode JSON: {e}")
-
-    async def get_grill_status(self, timeout=10):
-        await self.get_grills()  # Fetch grills from the API
-        client = await self.get_mqtt_client()
-        for grill in self.grills:
-            if grill["thingName"] in self.grill_status:
-                del self.grill_status[grill["thingName"]]
-            client.subscribe(("prod/thing/update/{}".format(grill["thingName"]), 1))
-        for grill in self.grills:
-            remaining = timeout
-            while not grill["thingName"] in self.grill_status and remaining > 0:
-                await asyncio.sleep(1)
-                remaining -= 1
-        return self.grill_status
-
-    # async def get_grill_status(self, timeout=10):
-    #     await self.get_grills()  # Fetch grills from the API
-    #     client = await self.get_mqtt_client()
-    #     for grill in self.grills:
-    #         if grill["thingName"] in self.grill_status:
-    #             del self.grill_status[grill["thingName"]]
-    #         client.subscribe(("prod/thing/update/{}".format(grill["thingName"]), 1))
-    #     for grill in self.grills:
-    #         remaining = timeout
-    #         while not grill["thingName"] in self.grill_status and remaining > 0:
-    #             await asyncio.sleep(1)
-    #             remaining -= 1
-    #     return self.grill_status
-    
-    # async def get_grill_status(self, timeout=10):
-    #     client = await self.get_mqtt_client()
-    #     for grill in self.grills:
-    #         if grill["thingName"] in self.grill_status:
-    #             del self.grill_status[grill["thingName"]]
-    #         client.subscribe(("prod/thing/update/{}".format(grill["thingName"]), 1))
-    #     for grill in self.grills:
-    #         remaining = timeout
-    #         while not grill["thingName"] in self.grill_status and remaining > 0:
-    #             time.sleep(1)
-    #             remaining -= 1
-    #     return self.grill_status
-
-    
-    async def get_mqtt_client(self):
-        await self.refresh_mqtt_url()
-        if self.mqtt_client is not None:
-            _LOGGER.debug("ReInit Client")
-        else:
-            self.mqtt_client = mqtt.Client(transport="websockets")
-            self.mqtt_client.on_connect = self.mqtt_onconnect
-            self.mqtt_client.on_connect_fail = self.mqtt_onconnectfail
-            self.mqtt_client.on_subscribe = self.mqtt_onsubscribe
-            self.mqtt_client.on_message = self.mqtt_onmessage
-
-            if _LOGGER.level <= 10:  # Add these callbacks only if our logging is Debug or less.
-                self.mqtt_client.enable_logger(_LOGGER)
-                self.mqtt_client.on_publish = self.mqtt_onpublish  # We don't publish to MQTT
-                self.mqtt_client.on_unsubscribe = self.mqtt_onunsubscribe
-                self.mqtt_client.on_disconnect = self.mqtt_ondisconnect
-                self.mqtt_client.on_socket_open = self.mqtt_onsocketopen
-                self.mqtt_client.on_socket_close = self.mqtt_onsocketclose
-                self.mqtt_client.on_socket_register_write = self.mqtt_onsocketregisterwrite
-                self.mqtt_client.on_socket_unregister_write = self.mqtt_onsocketunregisterwrite
-
-            context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-            context.check_hostname = True
-            context.verify_mode = ssl.CERT_REQUIRED
-            context.load_default_certs()
-
-            try:
-                self.mqtt_client.tls_set_context(context)
-            except Exception as e:
-                _LOGGER.error(f"Error setting TLS context: {e}")
-
-            self.mqtt_client.reconnect_delay_set(min_delay=10, max_delay=160)
-
-        mqtt_parts = urllib.parse.urlparse(self.mqtt_url)
-        headers = {
-            "Host": mqtt_parts.netloc,
-        }
-        path = "{}?{}".format(mqtt_parts.path, mqtt_parts.query)
-        self.mqtt_client.ws_set_options(path=path, headers=headers)
-
-        _LOGGER.info(f"Thread Active Count: {threading.active_count()}")
-        
-        retry_attempts = 0
-        while retry_attempts < 5:
-            try:
-                _LOGGER.debug(f"Connecting to {mqtt_parts.netloc} on port 443 with path {path}...")
-                self.mqtt_client.connect(mqtt_parts.netloc, 443, keepalive=300)
-                _LOGGER.debug(f"Connection successful! Connected to {mqtt_parts.netloc} on port 443.")
-                break
-            except Exception as e:
-                retry_attempts += 1
-                _LOGGER.error(f"Connection Failed: {e}, retrying in {2 ** retry_attempts} seconds...")
-                await asyncio.sleep(2 ** retry_attempts)
-                if retry_attempts >= 5:
-                    _LOGGER.error(f"Max retry attempts reached. Connection failed.")
-
-        if not self.mqtt_thread_running:
-            self.mqtt_thread = threading.Thread(target=self._mqtt_connect_func, daemon=True)
-            self.mqtt_thread_running = True
-            self.mqtt_thread.start()
-
-        return self.mqtt_client
-
-
-
     def mqtt_onconnect(self, client, userdata, flags, rc):
         _LOGGER.info("Connected with result code %s", rc)
         for grill in self.grills:
             topic = f"prod/thing/update/{grill['thingName']}"
             client.subscribe((topic, 1))
 
-    def mqtt_on_disconnect(self, client, userdata, rc):
-        _LOGGER.info("Disconnected with result code %s", rc)
-
     def mqtt_onconnectfail(self, client, userdata):
         _LOGGER.warning("Grill Connect Failed! MQTT Client Kill.")
         loop = asyncio.get_event_loop()
-        loop.create_task(self.kill())  # Use create_task instead of run
+        loop.create_task(self.kill())
 
     def mqtt_onsubscribe(self, client, userdata, mid, granted_qos):
         loop = asyncio.get_event_loop()
@@ -396,7 +245,7 @@ class Traeger:
             grill_id = grill["thingName"]
             if grill_id in self.grill_status:
                 del self.grill_status[grill_id]
-            loop.create_task(self.update_state(grill_id))  # Use create_task within event loop context
+            loop.create_task(self.update_state(grill_id))
 
     def mqtt_onmessage(self, client, userdata, message):
         _LOGGER.debug(
@@ -413,9 +262,9 @@ class Traeger:
             if grill_id in self.grill_callbacks:
                 for callback in self.grill_callbacks[grill_id]:
                     callback()
-            if self.grills_active == False:  # Go see if any grills are doing work.
-                for grill in self.grills:  # If nobody is working next MQTT refresh
-                    grill_id = grill["thingName"]  # It'll call kill.
+            if self.grills_active == False:
+                for grill in self.grills:
+                    grill_id = grill["thingName"]
                     state = self.get_state_for_device(grill_id)
                     if state is None:
                         return
@@ -449,56 +298,101 @@ class Traeger:
             return None
         return self.grill_status[thingName]["status"]
 
-    def get_details_for_device(self, thingName):
-        if thingName not in self.grill_status:
-            return None
-        return self.grill_status[thingName]["details"]
+    async def get_grill_status(self, timeout=10):
+        await self.get_grills()
+        client = await self.get_mqtt_client()
+        for grill in self.grills:
+            if grill["thingName"] in self.grill_status:
+                del self.grill_status[grill["thingName"]]
+            client.subscribe(("prod/thing/update/{}".format(grill["thingName"]), 1))
+        for grill in self.grills:
+            remaining = timeout
+            while not grill["thingName"] in self.grill_status and remaining > 0:
+                await asyncio.sleep(1)
+                remaining -= 1
+        return self.grill_status
 
-    def get_limits_for_device(self, thingName):
-        if thingName not in self.grill_status:
-            return None
-        return self.grill_status[thingName]["limits"]
+    async def get_mqtt_client(self):
+        await self.refresh_mqtt_url()
+        await self.check_websocket_url(self.mqtt_url)
 
-    def get_settings_for_device(self, thingName):
-        if thingName not in self.grill_status:
-            return None
-        return self.grill_status[thingName]["settings"]
-
-    def get_features_for_device(self, thingName):
-        if thingName not in self.grill_status:
-            return None
-        return self.grill_status[thingName]["features"]
-
-    def get_cloudconnect(self, thingName):
-        if thingName not in self.grill_status:
-            return False
-        return self.mqtt_thread_running
-
-    def get_units_for_device(self, thingName):
-        state = self.get_state_for_device(thingName)
-        if state is None:
-            return "°F"
-        if state["units"] == 0:
-            return "°C"
+        if self.mqtt_client is not None:
+            _LOGGER.debug("ReInit Client")
         else:
-            return "°F"
+            self.mqtt_client = mqtt.Client(transport="websockets")
+            self.mqtt_client.on_connect = self.mqtt_onconnect
+            self.mqtt_client.on_connect_fail = self.mqtt_onconnectfail
+            self.mqtt_client.on_subscribe = self.mqtt_onsubscribe
+            self.mqtt_client.on_message = self.mqtt_onmessage
 
-    def get_details_for_accessory(self, thingName, accessory_id):
-        state = self.get_state_for_device(thingName)
-        if state is None:
-            return None
-        for accessory in state["acc"]:
-            if accessory["uuid"] == accessory_id:
-                return accessory
-        return None
+            if _LOGGER.level <= 10:
+                self.mqtt_client.enable_logger(_LOGGER)
+                self.mqtt_client.on_publish = self.mqtt_onpublish
+                self.mqtt_client.on_unsubscribe = self.mqtt_onunsubscribe
+                self.mqtt_client.on_disconnect = self.mqtt_ondisconnect
+                self.mqtt_client.on_socket_open = self.mqtt_onsocketopen
+                self.mqtt_client.on_socket_close = self.mqtt_onsocketclose
+                self.mqtt_client.on_socket_register_write = self.mqtt_onsocketregisterwrite
+                self.mqtt_client.on_socket_unregister_write = self.mqtt_onsocketunregisterwrite
 
-    def grill_connect(self, client, userdata, flags, rc):
-        pass
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            context.check_hostname = True
+            context.verify_mode = ssl.CERT_REQUIRED
+            context.load_default_certs()
 
-    def grill_message(self, client, userdata, message):
-        if message.topic.startswith("prod/thing/update/"):
-            grill_id = message.topic[len("prod/thing/update/") :]
-            self.grill_status[grill_id] = json.loads(message.payload)
+            try:
+                self.mqtt_client.tls_set_context(context)
+            except Exception as e:
+                _LOGGER.error(f"Error setting TLS context: {e}")
+
+            self.mqtt_client.reconnect_delay_set(min_delay=10, max_delay=160)
+
+        mqtt_parts = urllib.parse.urlparse(self.mqtt_url)
+        headers = {
+            "Host": mqtt_parts.netloc,
+        }
+        path = "{}?{}".format(mqtt_parts.path, mqtt_parts.query)
+        _LOGGER.debug(f"MQTT Path: {path}")
+        _LOGGER.debug(f"Headers: {headers}")
+        self.mqtt_client.ws_set_options(path=path, headers=headers)
+
+        _LOGGER.info(f"Thread Active Count: {threading.active_count()}")
+
+        retry_attempts = 0
+        while retry_attempts < 5:
+            try:
+                _LOGGER.debug(f"Connecting to {mqtt_parts.netloc} on port 443 with path {path}...")
+                self.mqtt_client.connect(mqtt_parts.netloc, 443, keepalive=300)
+                _LOGGER.debug(f"Connection successful! Connected to {mqtt_parts.netloc} on port 443.")
+                break
+            except Exception as e:
+                retry_attempts += 1
+                _LOGGER.error(f"Connection Failed: {e}, retrying in {2 ** retry_attempts} seconds...")
+                await asyncio.sleep(2 ** retry_attempts)
+                if retry_attempts >= 5:
+                    _LOGGER.error(f"Max retry attempts reached. Connection failed.")
+
+        if not self.mqtt_thread_running:
+            self.mqtt_thread = threading.Thread(target=self._mqtt_connect_func, daemon=True)
+            self.mqtt_thread_running = True
+            self.mqtt_thread.start()
+
+        return self.mqtt_client
+
+    async def check_websocket_url(self, url):
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(url) as response:
+                    _LOGGER.debug(f"Checking WebSocket URL: {url}")
+                    if response.status == 200:
+                        _LOGGER.debug(f"WebSocket URL {url} is accessible.")
+                    else:
+                        _LOGGER.error(f"WebSocket URL {url} is not accessible. Status: {response.status}")
+                        _LOGGER.debug(f"Response Headers: {response.headers}")
+                        _LOGGER.debug(f"Response Text: {await response.text()}")
+            except Exception as e:
+                _LOGGER.error(f"Error checking WebSocket URL {url}: {e}")
+
 
     async def start(self, delay):
         await self.update_grills()
@@ -539,13 +433,11 @@ class Traeger:
             self.task = None
             self.mqtt_thread_running = False
             self.mqtt_client.disconnect()
-            while self.mqtt_client_inloop:  # Wait for disconnect to finish
+            while self.mqtt_client_inloop:
                 await asyncio.sleep(0.25)
             self.mqtt_url_expires = time.time()
-            for (
-                grill
-            ) in self.grills:  # Mark the grill(s) disconnected so they report unavail.
-                grill_id = grill["thingName"]  # Also hit the callbacks to update HA
+            for grill in self.grills:
+                grill_id = grill["thingName"]
                 self.grill_status[grill_id]["status"]["connected"] = False
                 for callback in self.grill_callbacks[grill_id]:
                     callback()
@@ -553,7 +445,6 @@ class Traeger:
             _LOGGER.info(f"Task Already Dead")
 
     async def api_wrapper(self, method: str, url: str, data: dict = {}, headers: dict = {}) -> dict:
-        """Get information from the API."""
         _LOGGER.debug(f"Making {method} request to {url} with data {data} and headers {headers}")
         try:
             if aiohttp.ClientSession:
@@ -570,7 +461,7 @@ class Traeger:
 
                     if method == "post_raw":
                         async with self.session.post(url, headers=headers, json=data):
-                            return {}  # Handle post_raw response if needed
+                            return {}
 
                     elif method == "post":
                         async with self.session.post(url, headers=headers, json=data) as response:
@@ -585,61 +476,6 @@ class Traeger:
         except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, TypeError, Exception) as exception:
             _LOGGER.error("Error fetching information from %s - %s", url, exception)
             return None
-
-
-    # async def api_wrapper(self, method: str, url: str, data: dict = {}, headers: dict = {}) -> dict:
-    #     """Get information from the API."""
-    #     _LOGGER.debug(f"Making {method} request to {url} with data {data} and headers {headers}")
-    #     try:
-    #         if self.request == aiohttp.ClientSession:
-    #             async with async_timeout.timeout(TIMEOUT):
-    #                 if method == "get":
-    #                     async with self.session.get(url, headers=headers) as response:
-    #                         data = await response.read()
-    #                         _LOGGER.debug(f"Received response: {data}")
-    #                         return json.loads(data)
-
-    #                 if method == "post_raw":
-    #                     async with self.session.post(url, headers=headers, json=data):
-    #                         return {}  # Handle post_raw response if needed
-
-    #                 elif method == "post":
-    #                     async with self.session.post(url, headers=headers, json=data) as response:
-    #                         data = await response.read()
-    #                         _LOGGER.debug(f"Received response: {data}")
-    #                         return json.loads(data)
-
-    #         else:  # Handling requests library
-    #             if method == "get":
-    #                 response = self.request.get(url, headers=headers, timeout=TIMEOUT)
-    #                 response.raise_for_status()
-    #                 _LOGGER.debug(f"Received response: {response.text}")
-    #                 return response.json()
-
-    #             elif method == "post_raw":
-    #                 self.request.post(url, headers=headers, json=data, timeout=TIMEOUT)
-    #                 return {}  # Handle post_raw response if needed
-
-    #             elif method == "post":
-    #                 response = self.request.post(url, headers=headers, json=data, timeout=TIMEOUT)
-    #                 response.raise_for_status()
-    #                 _LOGGER.debug(f"Received response: {response.text}")
-    #                 return response.json()
-
-    #     except requests.RequestException as exception:
-    #         _LOGGER.error("Error fetching information from %s - %s", url, exception)
-
-    #     except asyncio.TimeoutError as exception:
-    #         _LOGGER.error("Timeout error fetching information from %s - %s", url, exception)
-
-    #     except (KeyError, TypeError) as exception:
-    #         _LOGGER.error("Error parsing information from %s - %s\n%s", url, exception, traceback.format_exc())
-
-    #     except (aiohttp.ClientError, socket.gaierror) as exception:
-    #         _LOGGER.error("Error fetching information from %s - %s", url, exception)
-
-    #     except Exception as exception:  # pylint: disable=broad-except
-    #         _LOGGER.error("Something really wrong happened! - %s", exception)
 
     async def close(self):
         if self.session:

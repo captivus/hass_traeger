@@ -1,12 +1,3 @@
-"""
-Library to interact with traeger grills
-
-Copyright 2020 by Keith Baker All rights reserved.
-This file is part of the traeger python library,
-and is released under the "GNU GENERAL PUBLIC LICENSE Version 2".
-Please see the LICENSE file that should have been included as part of this package.
-"""
-
 import asyncio
 import datetime
 import json
@@ -27,9 +18,7 @@ import requests
 CLIENT_ID = "2fuohjtqv1e63dckp5v84rau0j"
 TIMEOUT = 60
 
-
 _LOGGER: logging.Logger = logging.getLogger(__package__)
-
 
 class Traeger:
     def __init__(self, username, password, request_library=requests):
@@ -147,7 +136,6 @@ class Traeger:
             _LOGGER.error("Failed to get user data.")
         return user_data
 
-
     async def send_command(self, thingName, command):
         _LOGGER.debug("Send Command Topic: %s, Send Command: %s", thingName, command)
         await self.refresh_token()
@@ -191,13 +179,9 @@ class Traeger:
             _LOGGER.error("Failed to get grills: %s", json_data)
             self.grills = []  # Default to an empty list if the response is invalid
 
-
     async def get_grills(self):
         await self.update_grills()
         return self.grills
-
-    # def get_grills(self):
-    #     return self.grills
 
     def set_callback_for_grill(self, grill_id, callback):
         if grill_id not in self.grill_callbacks:
@@ -283,34 +267,6 @@ class Traeger:
                 remaining -= 1
         return self.grill_status
 
-    # async def get_grill_status(self, timeout=10):
-    #     await self.get_grills()  # Fetch grills from the API
-    #     client = await self.get_mqtt_client()
-    #     for grill in self.grills:
-    #         if grill["thingName"] in self.grill_status:
-    #             del self.grill_status[grill["thingName"]]
-    #         client.subscribe(("prod/thing/update/{}".format(grill["thingName"]), 1))
-    #     for grill in self.grills:
-    #         remaining = timeout
-    #         while not grill["thingName"] in self.grill_status and remaining > 0:
-    #             await asyncio.sleep(1)
-    #             remaining -= 1
-    #     return self.grill_status
-    
-    # async def get_grill_status(self, timeout=10):
-    #     client = await self.get_mqtt_client()
-    #     for grill in self.grills:
-    #         if grill["thingName"] in self.grill_status:
-    #             del self.grill_status[grill["thingName"]]
-    #         client.subscribe(("prod/thing/update/{}".format(grill["thingName"]), 1))
-    #     for grill in self.grills:
-    #         remaining = timeout
-    #         while not grill["thingName"] in self.grill_status and remaining > 0:
-    #             time.sleep(1)
-    #             remaining -= 1
-    #     return self.grill_status
-
-    
     async def get_mqtt_client(self):
         await self.refresh_mqtt_url()
         if self.mqtt_client is not None:
@@ -373,8 +329,6 @@ class Traeger:
             self.mqtt_thread.start()
 
         return self.mqtt_client
-
-
 
     def mqtt_onconnect(self, client, userdata, flags, rc):
         _LOGGER.info("Connected with result code %s", rc)
@@ -585,61 +539,6 @@ class Traeger:
         except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, TypeError, Exception) as exception:
             _LOGGER.error("Error fetching information from %s - %s", url, exception)
             return None
-
-
-    # async def api_wrapper(self, method: str, url: str, data: dict = {}, headers: dict = {}) -> dict:
-    #     """Get information from the API."""
-    #     _LOGGER.debug(f"Making {method} request to {url} with data {data} and headers {headers}")
-    #     try:
-    #         if self.request == aiohttp.ClientSession:
-    #             async with async_timeout.timeout(TIMEOUT):
-    #                 if method == "get":
-    #                     async with self.session.get(url, headers=headers) as response:
-    #                         data = await response.read()
-    #                         _LOGGER.debug(f"Received response: {data}")
-    #                         return json.loads(data)
-
-    #                 if method == "post_raw":
-    #                     async with self.session.post(url, headers=headers, json=data):
-    #                         return {}  # Handle post_raw response if needed
-
-    #                 elif method == "post":
-    #                     async with self.session.post(url, headers=headers, json=data) as response:
-    #                         data = await response.read()
-    #                         _LOGGER.debug(f"Received response: {data}")
-    #                         return json.loads(data)
-
-    #         else:  # Handling requests library
-    #             if method == "get":
-    #                 response = self.request.get(url, headers=headers, timeout=TIMEOUT)
-    #                 response.raise_for_status()
-    #                 _LOGGER.debug(f"Received response: {response.text}")
-    #                 return response.json()
-
-    #             elif method == "post_raw":
-    #                 self.request.post(url, headers=headers, json=data, timeout=TIMEOUT)
-    #                 return {}  # Handle post_raw response if needed
-
-    #             elif method == "post":
-    #                 response = self.request.post(url, headers=headers, json=data, timeout=TIMEOUT)
-    #                 response.raise_for_status()
-    #                 _LOGGER.debug(f"Received response: {response.text}")
-    #                 return response.json()
-
-    #     except requests.RequestException as exception:
-    #         _LOGGER.error("Error fetching information from %s - %s", url, exception)
-
-    #     except asyncio.TimeoutError as exception:
-    #         _LOGGER.error("Timeout error fetching information from %s - %s", url, exception)
-
-    #     except (KeyError, TypeError) as exception:
-    #         _LOGGER.error("Error parsing information from %s - %s\n%s", url, exception, traceback.format_exc())
-
-    #     except (aiohttp.ClientError, socket.gaierror) as exception:
-    #         _LOGGER.error("Error fetching information from %s - %s", url, exception)
-
-    #     except Exception as exception:  # pylint: disable=broad-except
-    #         _LOGGER.error("Something really wrong happened! - %s", exception)
 
     async def close(self):
         if self.session:

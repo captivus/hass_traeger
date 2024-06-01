@@ -21,7 +21,7 @@ import asyncio
 import logging
 
 from dotenv import load_dotenv
-from traeger.traeger import Traeger
+from traeger.traeger_newnew import Traeger
 import aiohttp
 
 pp = pprint.PrettyPrinter(indent=4)
