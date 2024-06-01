@@ -234,8 +234,10 @@ class Traeger:
         _LOGGER.debug(f"MQTT URL:{self.mqtt_url} Expires @:{self.mqtt_url_expires}")
 
     def _mqtt_connect_func(self):
-        if self.mqtt_client != None:
+        if self.mqtt_client is not None:
             _LOGGER.debug(f"Start MQTT Loop Forever")
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
             while self.mqtt_thread_running:
                 self.mqtt_client_inloop = True
                 self.mqtt_client.loop_forever()
@@ -244,6 +246,8 @@ class Traeger:
                     self.mqtt_url_remaining() < 60 or self.mqtt_thread_refreshing
                 ) and self.mqtt_thread_running:
                     time.sleep(1)
+            loop.run_until_complete(loop.shutdown_asyncgens())
+            loop.close()
         _LOGGER.debug(f"Should be the end of the thread.")
 
     def on_connect(self, client, userdata, flags, rc):
@@ -329,18 +333,24 @@ class Traeger:
                 self.mqtt_client.on_socket_unregister_write = self.mqtt_onsocketunregisterwrite
 
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
-            self.mqtt_client.tls_set_context(context)
+            context.check_hostname = True
+            context.verify_mode = ssl.CERT_REQUIRED
+            context.load_default_certs()
+
+            try:
+                self.mqtt_client.tls_set_context(context)
+            except Exception as e:
+                _LOGGER.error(f"Error setting TLS context: {e}")
+
             self.mqtt_client.reconnect_delay_set(min_delay=10, max_delay=160)
-            
+
         mqtt_parts = urllib.parse.urlparse(self.mqtt_url)
         headers = {
             "Host": mqtt_parts.netloc,
         }
         path = "{}?{}".format(mqtt_parts.path, mqtt_parts.query)
         self.mqtt_client.ws_set_options(path=path, headers=headers)
-        
+
         _LOGGER.info(f"Thread Active Count: {threading.active_count()}")
         try:
             _LOGGER.debug(f"Connecting to {mqtt_parts.netloc} on port 443 with path {path}...")
@@ -350,30 +360,34 @@ class Traeger:
             _LOGGER.error(f"Connection Failed: {e}")
 
         if not self.mqtt_thread_running:
-            self.mqtt_thread = threading.Thread(target=self._mqtt_connect_func)
+            self.mqtt_thread = threading.Thread(target=self._mqtt_connect_func, daemon=True)
             self.mqtt_thread_running = True
             self.mqtt_thread.start()
-        
+
         return self.mqtt_client
 
+
     def mqtt_onconnect(self, client, userdata, flags, rc):
-        _LOGGER.info("Grill Connected")
+        _LOGGER.info("Connected with result code %s", rc)
         for grill in self.grills:
-            grill_id = grill["thingName"]
-            if grill_id in self.grill_status:
-                del self.grill_status[grill_id]
-            client.subscribe(("prod/thing/update/{}".format(grill_id), 1))
+            topic = f"prod/thing/update/{grill['thingName']}"
+            client.subscribe((topic, 1))
+
+    def mqtt_on_disconnect(self, client, userdata, rc):
+        _LOGGER.info("Disconnected with result code %s", rc)
 
     def mqtt_onconnectfail(self, client, userdata):
         _LOGGER.warning("Grill Connect Failed! MQTT Client Kill.")
-        asyncio.run(self.kill())  # Shutdown if we aren't getting anywhere.
+        loop = asyncio.get_event_loop()
+        loop.create_task(self.kill())  # Use create_task instead of run
 
     def mqtt_onsubscribe(self, client, userdata, mid, granted_qos):
+        loop = asyncio.get_event_loop()
         for grill in self.grills:
             grill_id = grill["thingName"]
             if grill_id in self.grill_status:
                 del self.grill_status[grill_id]
-            asyncio.run(self.update_state(grill_id))
+            loop.create_task(self.update_state(grill_id))  # Use create_task within event loop context
 
     def mqtt_onmessage(self, client, userdata, message):
         _LOGGER.debug(
@@ -410,16 +424,16 @@ class Traeger:
         _LOGGER.debug(f"OnDisconnect Callback. Client: {client} userdata: {userdata} rc: {rc}")
 
     def mqtt_onsocketopen(self, client, userdata, sock):
-        _LOGGER.debug(f"Sock.Open.Report...Client: {client} UserData: {userdata} Sock: {sock}")
+        _LOGGER.debug(f"Socket Open: Client: {client} UserData: {userdata} Sock: {sock}")
 
     def mqtt_onsocketclose(self, client, userdata, sock):
-        _LOGGER.debug(f"Sock.Clse.Report...Client: {client} UserData: {userdata} Sock: {sock}")
+        _LOGGER.debug(f"Socket Close: Client: {client} UserData: {userdata} Sock: {sock}")
 
     def mqtt_onsocketregisterwrite(self, client, userdata, sock):
-        _LOGGER.debug(f"Sock.Regi.Write...Client: {client} UserData: {userdata} Sock: {sock}")
+        _LOGGER.debug(f"Socket Register Write: Client: {client} UserData: {userdata} Sock: {sock}")
 
     def mqtt_onsocketunregisterwrite(self, client, userdata, sock):
-        _LOGGER.debug(f"Sock.UnRg.Write...Client: {client} UserData: {userdata} Sock: {sock}")
+        _LOGGER.debug(f"Socket Unregister Write: Client: {client} UserData: {userdata} Sock: {sock}")
 
     def get_state_for_device(self, thingName):
         if thingName not in self.grill_status:
