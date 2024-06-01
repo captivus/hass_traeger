@@ -76,6 +76,9 @@ async def main():
     config["graphite_host"] = os.getenv("GRAPHITE_HOST") or input("graphite host:")
 
     traeger = Traeger(config['username'], config['password'], request_library=aiohttp.ClientSession)
+    await traeger.initialize()
+    grills_status = await traeger.get_grill_status()
+    print(grills_status)
 
     try:
         while True:

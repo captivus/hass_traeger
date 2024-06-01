@@ -48,6 +48,7 @@ class Traeger:
         self.grill_status = {}
         self.access_token = None
         self.token = None
+        self.refresh_token_value = None  # Initialize here
         self.token_expires = 0
         self.mqtt_url_expires = time.time()
         self.request = request_library
@@ -59,13 +60,16 @@ class Traeger:
         self.mqtt_client_inloop = False
         self.autodisconnect = False
 
+    async def initialize(self):
+        await self.do_cognito()
+
     def token_remaining(self):
         return self.token_expires - time.time()
 
     async def do_cognito(self):
         t = datetime.datetime.utcnow()
         amzdate = t.strftime("%Y%m%dT%H%M%SZ")
-        return await self.api_wrapper(
+        response = await self.api_wrapper(
             "post",
             "https://cognito-idp.us-west-2.amazonaws.com/",
             data={
@@ -83,25 +87,66 @@ class Traeger:
                 "X-Amz-Target": "AWSCognitoIdentityProviderService.InitiateAuth",
             },
         )
+        if response and 'AuthenticationResult' in response:
+            self.token = response['AuthenticationResult']['IdToken']
+            self.refresh_token_value = response['AuthenticationResult'].get('RefreshToken')
+            self.token_expires = time.time() + response['AuthenticationResult']['ExpiresIn']
+            _LOGGER.info('Initial token obtained successfully.')
+        else:
+            _LOGGER.error("Failed to authenticate with Cognito: %s", response)
+            raise Exception("Initial authentication failed")
 
     async def refresh_token(self):
         if self.token_remaining() < 60:
-            request_time = time.time()
-            response = await self.do_cognito()
-            if response is None or "AuthenticationResult" not in response:
-                raise ValueError("Failed to get a valid response from Cognito")
-            self.token_expires = (
-                response["AuthenticationResult"]["ExpiresIn"] + request_time
-            )
-            self.token = response["AuthenticationResult"]["IdToken"]
+            if not self.refresh_token_value:
+                _LOGGER.error("Cannot refresh token: REFRESH_TOKEN is missing")
+                return
+
+            url = 'https://cognito-idp.us-west-2.amazonaws.com/'
+            data = {
+                'ClientId': CLIENT_ID,
+                'AuthFlow': 'REFRESH_TOKEN_AUTH',
+                'AuthParameters': {
+                    'REFRESH_TOKEN': self.refresh_token_value  # Use renamed attribute
+                }
+            }
+            headers = {
+                'Content-Type': 'application/x-amz-json-1.1',
+                'X-Amz-Target': 'AWSCognitoIdentityProviderService.InitiateAuth'
+            }
+
+            try:
+                async with self.session.post(url, json=data, headers=headers) as response:
+                    _LOGGER.debug(f"Response status: {response.status}")
+                    _LOGGER.debug(f"Response headers: {response.headers}")
+                    response_text = await response.text()
+                    _LOGGER.debug(f"Response text: {response_text}")
+
+                    if response.status == 200 and response.headers['Content-Type'] == 'application/x-amz-json-1.1':
+                        response_data = json.loads(response_text)
+                        if 'AuthenticationResult' in response_data:
+                            self.token = response_data['AuthenticationResult']['IdToken']
+                            self.refresh_token_value = response_data['AuthenticationResult'].get('RefreshToken', self.refresh_token_value)
+                            self.token_expires = time.time() + response_data['AuthenticationResult']['ExpiresIn']
+                            _LOGGER.info('Token refreshed successfully.')
+                        else:
+                            raise Exception('Failed to refresh token: AuthenticationResult not found in response')
+                    else:
+                        raise Exception(f'Unexpected response: {response.status} {response_text}')
+            except Exception as e:
+                _LOGGER.error(f'Error refreshing token: {e}')
 
     async def get_user_data(self):
         await self.refresh_token()
-        return await self.api_wrapper(
+        user_data = await self.api_wrapper(
             "get",
             "https://1ywgyc65d1.execute-api.us-west-2.amazonaws.com/prod/users/self",
             headers={"authorization": self.token},
         )
+        if user_data is None:
+            _LOGGER.error("Failed to get user data.")
+        return user_data
+
 
     async def send_command(self, thingName, command):
         _LOGGER.debug("Send Command Topic: %s, Send Command: %s", thingName, command)
@@ -139,8 +184,13 @@ class Traeger:
         await self.send_command(thingName, "12,{}".format(time_s))
 
     async def update_grills(self):
-        json = await self.get_user_data()
-        self.grills = json["things"]
+        json_data = await self.get_user_data()
+        if json_data and "things" in json_data:
+            self.grills = json_data["things"]
+        else:
+            _LOGGER.error("Failed to get grills: %s", json_data)
+            self.grills = []  # Default to an empty list if the response is invalid
+
 
     async def get_grills(self):
         await self.update_grills()
@@ -506,9 +556,13 @@ class Traeger:
                 async with async_timeout.timeout(TIMEOUT):
                     if method == "get":
                         async with self.session.get(url, headers=headers) as response:
-                            data = await response.read()
-                            _LOGGER.debug(f"Received response: {data}")
-                            return json.loads(data)
+                            if response.status == 200:
+                                data = await response.read()
+                                _LOGGER.debug(f"Received response: {data}")
+                                return json.loads(data)
+                            else:
+                                _LOGGER.error(f"Error response {response.status} from {url}")
+                                return None
 
                     if method == "post_raw":
                         async with self.session.post(url, headers=headers, json=data):
@@ -516,12 +570,18 @@ class Traeger:
 
                     elif method == "post":
                         async with self.session.post(url, headers=headers, json=data) as response:
-                            data = await response.read()
-                            _LOGGER.debug(f"Received response: {data}")
-                            return json.loads(data)
+                            if response.status == 200:
+                                data = await response.read()
+                                _LOGGER.debug(f"Received response: {data}")
+                                return json.loads(data)
+                            else:
+                                _LOGGER.error(f"Error response {response.status} from {url}")
+                                return None
 
         except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, TypeError, Exception) as exception:
             _LOGGER.error("Error fetching information from %s - %s", url, exception)
+            return None
+
 
     # async def api_wrapper(self, method: str, url: str, data: dict = {}, headers: dict = {}) -> dict:
     #     """Get information from the API."""
