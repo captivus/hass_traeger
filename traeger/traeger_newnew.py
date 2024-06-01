@@ -16,6 +16,7 @@ CLIENT_ID = "2fuohjtqv1e63dckp5v84rau0j"
 TIMEOUT = 60
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(name)s %(levelname)s %(message)s')
 
 
 class Traeger:
@@ -254,15 +255,17 @@ class Traeger:
             message.payload,
         )
         _LOGGER.info(
-            f"Token Time Remaining:{self.token_remaining()} MQTT Time Remaining:{self.mqtt_url_remaining()}"
+            "Token Time Remaining:%s MQTT Time Remaining:%s",
+            self.token_remaining(),
+            self.mqtt_url_remaining(),
         )
         if message.topic.startswith("prod/thing/update/"):
-            grill_id = message.topic[len("prod/thing/update/") :]
+            grill_id = message.topic[len("prod/thing/update/"):]
             self.grill_status[grill_id] = json.loads(message.payload)
             if grill_id in self.grill_callbacks:
                 for callback in self.grill_callbacks[grill_id]:
                     callback()
-            if self.grills_active == False:
+            if not self.grills_active:
                 for grill in self.grills:
                     grill_id = grill["thingName"]
                     state = self.get_state_for_device(grill_id)
@@ -273,25 +276,25 @@ class Traeger:
                             self.grills_active = True
 
     def mqtt_onpublish(self, client, userdata, mid):
-        _LOGGER.debug(f"OnPublish Callback. Client: {client} userdata: {userdata} mid: {mid}")
+        _LOGGER.debug("OnPublish Callback. Client: %s userdata: %s mid: %s", client, userdata, mid)
 
     def mqtt_onunsubscribe(self, client, userdata, mid):
-        _LOGGER.debug(f"OnUnsubscribe Callback. Client: {client} userdata: {userdata} mid: {mid}")
+        _LOGGER.debug("OnUnsubscribe Callback. Client: %s userdata: %s mid: %s", client, userdata, mid)
 
     def mqtt_ondisconnect(self, client, userdata, rc):
-        _LOGGER.debug(f"OnDisconnect Callback. Client: {client} userdata: {userdata} rc: {rc}")
+        _LOGGER.debug("OnDisconnect Callback. Client: %s userdata: %s rc: %s", client, userdata, rc)
 
     def mqtt_onsocketopen(self, client, userdata, sock):
-        _LOGGER.debug(f"Socket Open: Client: {client} UserData: {userdata} Sock: {sock}")
+        _LOGGER.debug("Socket Open: Client: %s UserData: %s Sock: %s", client, userdata, sock)
 
     def mqtt_onsocketclose(self, client, userdata, sock):
-        _LOGGER.debug(f"Socket Close: Client: {client} UserData: {userdata} Sock: {sock}")
+        _LOGGER.debug("Socket Close: Client: %s UserData: %s Sock: %s", client, userdata, sock)
 
     def mqtt_onsocketregisterwrite(self, client, userdata, sock):
-        _LOGGER.debug(f"Socket Register Write: Client: {client} UserData: {userdata} Sock: {sock}")
+        _LOGGER.debug("Socket Register Write: Client: %s UserData: %s Sock: %s", client, userdata, sock)
 
     def mqtt_onsocketunregisterwrite(self, client, userdata, sock):
-        _LOGGER.debug(f"Socket Unregister Write: Client: {client} UserData: {userdata} Sock: {sock}")
+        _LOGGER.debug("Socket Unregister Write: Client: %s UserData: %s Sock: %s", client, userdata, sock)
 
     def get_state_for_device(self, thingName):
         if thingName not in self.grill_status:
@@ -325,7 +328,7 @@ class Traeger:
             self.mqtt_client.on_subscribe = self.mqtt_onsubscribe
             self.mqtt_client.on_message = self.mqtt_onmessage
 
-            if _LOGGER.level <= 10:
+            if _LOGGER.level <= logging.DEBUG:
                 self.mqtt_client.enable_logger(_LOGGER)
                 self.mqtt_client.on_publish = self.mqtt_onpublish
                 self.mqtt_client.on_unsubscribe = self.mqtt_onunsubscribe
@@ -343,7 +346,7 @@ class Traeger:
             try:
                 self.mqtt_client.tls_set_context(context)
             except Exception as e:
-                _LOGGER.error(f"Error setting TLS context: {e}")
+                _LOGGER.error("Error setting TLS context: %s", e)
 
             self.mqtt_client.reconnect_delay_set(min_delay=10, max_delay=160)
 
@@ -352,25 +355,25 @@ class Traeger:
             "Host": mqtt_parts.netloc,
         }
         path = "{}?{}".format(mqtt_parts.path, mqtt_parts.query)
-        _LOGGER.debug(f"MQTT Path: {path}")
-        _LOGGER.debug(f"Headers: {headers}")
+        _LOGGER.debug("MQTT Path: %s", path)
+        _LOGGER.debug("Headers: %s", headers)
         self.mqtt_client.ws_set_options(path=path, headers=headers)
 
-        _LOGGER.info(f"Thread Active Count: {threading.active_count()}")
+        _LOGGER.info("Thread Active Count: %s", threading.active_count())
 
         retry_attempts = 0
         while retry_attempts < 5:
             try:
-                _LOGGER.debug(f"Connecting to {mqtt_parts.netloc} on port 443 with path {path}...")
+                _LOGGER.debug("Connecting to %s on port 443 with path %s...", mqtt_parts.netloc, path)
                 self.mqtt_client.connect(mqtt_parts.netloc, 443, keepalive=300)
-                _LOGGER.debug(f"Connection successful! Connected to {mqtt_parts.netloc} on port 443.")
+                _LOGGER.debug("Connection successful! Connected to %s on port 443.", mqtt_parts.netloc)
                 break
             except Exception as e:
                 retry_attempts += 1
-                _LOGGER.error(f"Connection Failed: {e}, retrying in {2 ** retry_attempts} seconds...")
+                _LOGGER.error("Connection Failed: %s, retrying in %s seconds...", e, 2 ** retry_attempts)
                 await asyncio.sleep(2 ** retry_attempts)
                 if retry_attempts >= 5:
-                    _LOGGER.error(f"Max retry attempts reached. Connection failed.")
+                    _LOGGER.error("Max retry attempts reached. Connection failed.")
 
         if not self.mqtt_thread_running:
             self.mqtt_thread = threading.Thread(target=self._mqtt_connect_func, daemon=True)
@@ -383,31 +386,32 @@ class Traeger:
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.get(url) as response:
-                    _LOGGER.debug(f"Checking WebSocket URL: {url}")
+                    _LOGGER.debug("Checking WebSocket URL: %s", url)
                     if response.status == 200:
-                        _LOGGER.debug(f"WebSocket URL {url} is accessible.")
+                        _LOGGER.debug("WebSocket URL %s is accessible.", url)
                     else:
-                        _LOGGER.error(f"WebSocket URL {url} is not accessible. Status: {response.status}")
-                        _LOGGER.debug(f"Response Headers: {response.headers}")
-                        _LOGGER.debug(f"Response Text: {await response.text()}")
+                        _LOGGER.error("WebSocket URL %s is not accessible. Status: %s", url, response.status)
+                        _LOGGER.debug("Response Headers: %s", response.headers)
+                        _LOGGER.debug("Response Text: %s", await response.text())
             except Exception as e:
-                _LOGGER.error(f"Error checking WebSocket URL {url}: {e}")
-
+                _LOGGER.error("Error checking WebSocket URL %s: %s", url, e)
 
     async def start(self, delay):
         await self.update_grills()
         self.grills_active = True
-        _LOGGER.info(f"Call_Later in: {delay} seconds.")
+        _LOGGER.info("Call_Later in: %s seconds.", delay)
         self.task = self.loop.call_later(delay, self.syncmain)
 
     def syncmain(self):
-        _LOGGER.debug(f"@Call_Later SyncMain CreatingTask for async Main.")
+        _LOGGER.debug("@Call_Later SyncMain CreatingTask for async Main.")
         asyncio.create_task(self.main())
 
     async def main(self):
-        _LOGGER.debug(f"Current Main Loop Time: {time.time()}")
+        _LOGGER.debug("Current Main Loop Time: %s", time.time())
         _LOGGER.debug(
-            f"MQTT Logger Token Time Remaining:{self.token_remaining()} MQTT Time Remaining:{self.mqtt_url_remaining()}"
+            "MQTT Logger Token Time Remaining:%s MQTT Time Remaining:%s",
+            self.token_remaining(),
+            self.mqtt_url_remaining(),
         )
         if self.mqtt_url_remaining() < 60:
             self.mqtt_thread_refreshing = True
@@ -416,7 +420,7 @@ class Traeger:
                 self.mqtt_client = None
             await self.get_mqtt_client()
             self.mqtt_thread_refreshing = False
-        _LOGGER.debug(f"Call_Later @: {self.mqtt_url_expires}")
+        _LOGGER.debug("Call_Later @: %s", self.mqtt_url_expires)
         delay = self.mqtt_url_remaining()
         if delay < 30:
             delay = 30
@@ -424,11 +428,11 @@ class Traeger:
 
     async def kill(self):
         if self.mqtt_thread_running:
-            _LOGGER.info(f"Killing Task")
-            _LOGGER.debug(f"Task Info: {self.task}")
+            _LOGGER.info("Killing Task")
+            _LOGGER.debug("Task Info: %s", self.task)
             self.task.cancel()
             _LOGGER.debug(
-                f"Task Info: {self.task} TaskCancelled Status: {self.task.cancelled()}"
+                "Task Info: %s TaskCancelled Status: %s", self.task, self.task.cancelled()
             )
             self.task = None
             self.mqtt_thread_running = False
@@ -442,10 +446,10 @@ class Traeger:
                 for callback in self.grill_callbacks[grill_id]:
                     callback()
         else:
-            _LOGGER.info(f"Task Already Dead")
+            _LOGGER.info("Task Already Dead")
 
     async def api_wrapper(self, method: str, url: str, data: dict = {}, headers: dict = {}) -> dict:
-        _LOGGER.debug(f"Making {method} request to {url} with data {data} and headers {headers}")
+        _LOGGER.debug("Making %s request to %s with data %s and headers %s", method, url, data, headers)
         try:
             if aiohttp.ClientSession:
                 async with async_timeout.timeout(TIMEOUT):
@@ -453,10 +457,10 @@ class Traeger:
                         async with self.session.get(url, headers=headers) as response:
                             if response.status == 200:
                                 data = await response.read()
-                                _LOGGER.debug(f"Received response: {data}")
+                                _LOGGER.debug("Received response: %s", data)
                                 return json.loads(data)
                             else:
-                                _LOGGER.error(f"Error response {response.status} from {url}")
+                                _LOGGER.error("Error response %s from %s", response.status, url)
                                 return None
 
                     if method == "post_raw":
@@ -467,10 +471,10 @@ class Traeger:
                         async with self.session.post(url, headers=headers, json=data) as response:
                             if response.status == 200:
                                 data = await response.read()
-                                _LOGGER.debug(f"Received response: {data}")
+                                _LOGGER.debug("Received response: %s", data)
                                 return json.loads(data)
                             else:
-                                _LOGGER.error(f"Error response {response.status} from {url}")
+                                _LOGGER.error("Error response %s from %s", response.status, url)
                                 return None
 
         except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, TypeError, Exception) as exception:
