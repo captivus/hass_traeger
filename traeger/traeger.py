@@ -309,8 +309,8 @@ class Traeger:
     
     async def get_mqtt_client(self):
         await self.refresh_mqtt_url()
-        if self.mqtt_client != None:
-            _LOGGER.debug(f"ReInit Client")
+        if self.mqtt_client is not None:
+            _LOGGER.debug("ReInit Client")
         else:
             self.mqtt_client = mqtt.Client(transport="websockets")
             self.mqtt_client.on_connect = self.mqtt_onconnect
@@ -318,43 +318,38 @@ class Traeger:
             self.mqtt_client.on_subscribe = self.mqtt_onsubscribe
             self.mqtt_client.on_message = self.mqtt_onmessage
 
-            if (_LOGGER.level <= 10):  # Add these callbacks only if our logging is Debug or less.
+            if _LOGGER.level <= 10:  # Add these callbacks only if our logging is Debug or less.
                 self.mqtt_client.enable_logger(_LOGGER)
-                self.mqtt_client.on_publish = (
-                    self.mqtt_onpublish
-                )  # We dont Publish to MQTT
+                self.mqtt_client.on_publish = self.mqtt_onpublish  # We don't publish to MQTT
                 self.mqtt_client.on_unsubscribe = self.mqtt_onunsubscribe
                 self.mqtt_client.on_disconnect = self.mqtt_ondisconnect
                 self.mqtt_client.on_socket_open = self.mqtt_onsocketopen
                 self.mqtt_client.on_socket_close = self.mqtt_onsocketclose
-                self.mqtt_client.on_socket_register_write = (
-                    self.mqtt_onsocketregisterwrite
-                )
-                self.mqtt_client.on_socket_unregister_write = (
-                    self.mqtt_onsocketunregisterwrite
-                )
+                self.mqtt_client.on_socket_register_write = self.mqtt_onsocketregisterwrite
+                self.mqtt_client.on_socket_unregister_write = self.mqtt_onsocketunregisterwrite
+
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
             context.check_hostname = False
             context.verify_mode = ssl.CERT_NONE
             self.mqtt_client.tls_set_context(context)
             self.mqtt_client.reconnect_delay_set(min_delay=10, max_delay=160)
+            
         mqtt_parts = urllib.parse.urlparse(self.mqtt_url)
         headers = {
-            "Host": "{0:s}".format(mqtt_parts.netloc),
+            "Host": mqtt_parts.netloc,
         }
-        self.mqtt_client.ws_set_options(
-            path="{}?{}".format(mqtt_parts.path, mqtt_parts.query), headers=headers
-        )
-        _LOGGER.info(f"Thread Active Count:{threading.active_count()}")
+        path = "{}?{}".format(mqtt_parts.path, mqtt_parts.query)
+        self.mqtt_client.ws_set_options(path=path, headers=headers)
+        
+        _LOGGER.info(f"Thread Active Count: {threading.active_count()}")
         try:
-            print(f"Connecting to {mqtt_parts.netloc} on port 443...")
+            _LOGGER.debug(f"Connecting to {mqtt_parts.netloc} on port 443 with path {path}...")
             self.mqtt_client.connect(mqtt_parts.netloc, 443, keepalive=300)
-            print(f"Connection successful! Connected to {mqtt_parts.netloc} on port 443.")
-
+            _LOGGER.debug(f"Connection successful! Connected to {mqtt_parts.netloc} on port 443.")
         except Exception as e:
-            print(f"Connection Failed: {e}")
+            _LOGGER.error(f"Connection Failed: {e}")
 
-        if self.mqtt_thread_running == False:
+        if not self.mqtt_thread_running:
             self.mqtt_thread = threading.Thread(target=self._mqtt_connect_func)
             self.mqtt_thread_running = True
             self.mqtt_thread.start()
@@ -371,7 +366,7 @@ class Traeger:
 
     def mqtt_onconnectfail(self, client, userdata):
         _LOGGER.warning("Grill Connect Failed! MQTT Client Kill.")
-        asyncio.run(self.kill())  # Shutdown if we arn't getting anywhere.
+        asyncio.run(self.kill())  # Shutdown if we aren't getting anywhere.
 
     def mqtt_onsubscribe(self, client, userdata, mid, granted_qos):
         for grill in self.grills:
@@ -399,46 +394,32 @@ class Traeger:
                 for grill in self.grills:  # If nobody is working next MQTT refresh
                     grill_id = grill["thingName"]  # It'll call kill.
                     state = self.get_state_for_device(grill_id)
-                    if state == None:
+                    if state is None:
                         return
                     if state["connected"]:
                         if 4 <= state["system_status"] <= 8:
                             self.grills_active = True
 
     def mqtt_onpublish(self, client, userdata, mid):
-        _LOGGER.debug(
-            f"OnPublish Callback. Client:{client} userdata:{userdata} mid:{mid}"
-        )
+        _LOGGER.debug(f"OnPublish Callback. Client: {client} userdata: {userdata} mid: {mid}")
 
     def mqtt_onunsubscribe(self, client, userdata, mid):
-        _LOGGER.debug(
-            f"OnUnsubscribe Callback. Client:{client} userdata:{userdata} mid:{mid}"
-        )
+        _LOGGER.debug(f"OnUnsubscribe Callback. Client: {client} userdata: {userdata} mid: {mid}")
 
     def mqtt_ondisconnect(self, client, userdata, rc):
-        _LOGGER.debug(
-            f"OnDisconnect Callback. Client:{client} userdata:{userdata} rc:{rc}"
-        )
+        _LOGGER.debug(f"OnDisconnect Callback. Client: {client} userdata: {userdata} rc: {rc}")
 
     def mqtt_onsocketopen(self, client, userdata, sock):
-        _LOGGER.debug(
-            f"Sock.Open.Report...Client: {client} UserData: {userdata} Sock: {sock}"
-        )
+        _LOGGER.debug(f"Sock.Open.Report...Client: {client} UserData: {userdata} Sock: {sock}")
 
     def mqtt_onsocketclose(self, client, userdata, sock):
-        _LOGGER.debug(
-            f"Sock.Clse.Report...Client: {client} UserData: {userdata} Sock: {sock}"
-        )
+        _LOGGER.debug(f"Sock.Clse.Report...Client: {client} UserData: {userdata} Sock: {sock}")
 
     def mqtt_onsocketregisterwrite(self, client, userdata, sock):
-        _LOGGER.debug(
-            f"Sock.Regi.Write....Client: {client} UserData: {userdata} Sock: {sock}"
-        )
+        _LOGGER.debug(f"Sock.Regi.Write...Client: {client} UserData: {userdata} Sock: {sock}")
 
     def mqtt_onsocketunregisterwrite(self, client, userdata, sock):
-        _LOGGER.debug(
-            f"Sock.UnRg.Write....Client: {client} UserData: {userdata} Sock: {sock}"
-        )
+        _LOGGER.debug(f"Sock.UnRg.Write...Client: {client} UserData: {userdata} Sock: {sock}")
 
     def get_state_for_device(self, thingName):
         if thingName not in self.grill_status:
