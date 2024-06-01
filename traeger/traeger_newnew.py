@@ -18,6 +18,11 @@ TIMEOUT = 60
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(name)s %(levelname)s %(message)s')
 
+class WebSocketError(Exception):
+    pass
+
+class InvalidWebSocketURLError(WebSocketError):
+    pass
 
 class Traeger:
     def __init__(self, username, password, request_library=aiohttp.ClientSession):
@@ -461,11 +466,19 @@ class Traeger:
                                 return json.loads(data)
                             else:
                                 _LOGGER.error("Error response %s from %s", response.status, url)
+                                if response.status == 404:
+                                    raise InvalidWebSocketURLError("Invalid WebSocket URL")
                                 return None
 
                     if method == "post_raw":
-                        async with self.session.post(url, headers=headers, json=data):
-                            return {}
+                        async with self.session.post(url, headers=headers, json=data) as response:
+                            if response.status == 200:
+                                return {}
+                            else:
+                                _LOGGER.error("Error response %s from %s", response.status, url)
+                                if response.status == 404:
+                                    raise InvalidWebSocketURLError("Invalid WebSocket URL")
+                                return None
 
                     elif method == "post":
                         async with self.session.post(url, headers=headers, json=data) as response:
@@ -475,11 +488,16 @@ class Traeger:
                                 return json.loads(data)
                             else:
                                 _LOGGER.error("Error response %s from %s", response.status, url)
+                                if response.status == 404:
+                                    raise InvalidWebSocketURLError("Invalid WebSocket URL")
                                 return None
 
-        except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, TypeError, Exception) as exception:
+        except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, TypeError) as exception:
             _LOGGER.error("Error fetching information from %s - %s", url, exception)
             return None
+        except Exception as exception:
+            _LOGGER.error("Unexpected error occurred: %s", exception)
+            raise WebSocketError("WebSocket error occurred") from exception
 
     async def close(self):
         if self.session:
