@@ -66,6 +66,37 @@ def send_data_to_graphite(host, port, metric_path, value, timestamp):
         sock.connect((host, port))
         sock.sendall(message.encode('utf-8'))
 
+async def collect_data(config, traeger):
+    while True:
+        last_collect = time.time()
+        _LOGGER.debug("Collecting grill data")
+
+        grills_status = await traeger.get_grill_status()
+        _LOGGER.debug(f"Grills Status: {grills_status}")
+
+        grills = await traeger.get_grills()
+        _LOGGER.debug(f"Grills: {grills}")
+
+        for grill in grills:
+            if grill["thingName"] not in grills_status:
+                _LOGGER.warning(f"Missing Data for {grill['thingName']}")
+
+        try:
+            for k, v in unpack_dict([], grills_status):
+                metric_path = f"traeger.{k}"
+                send_data_to_graphite(config["graphite_host"], int(config["graphite_port"]), metric_path, v, last_collect)
+
+        except Exception as e:
+            _LOGGER.error(e)
+
+        next_collect = last_collect + 60
+        until_collect = next_collect - time.time()
+        if until_collect > 0:
+            _LOGGER.debug(f"Sleeeping {until_collect}")
+            await asyncio.sleep(until_collect)
+        else:
+            _LOGGER.debug(f"Late for next collection {until_collect}")
+
 async def main():
     load_dotenv()
 
@@ -75,51 +106,17 @@ async def main():
     config["graphite_port"] = os.getenv("GRAPHITE_PORT") or input("graphite port:")
     config["graphite_host"] = os.getenv("GRAPHITE_HOST") or input("graphite host:")
 
-    traeger = Traeger(config['username'], config['password'], request_library=aiohttp.ClientSession)
-    await traeger.initialize()
-    grills_status = await traeger.get_grill_status()
-    print(grills_status)
-
-    try:
-        while True:
-            last_collect = time.time()
-            _LOGGER.debug("Collecting grill data")
-
-            grills_status = await traeger.get_grill_status()
-            _LOGGER.debug(f"Grills Status: {grills_status}")
-
-            grills = await traeger.get_grills()
-            _LOGGER.debug(f"Grills: {grills}")
-
-            for grill in grills:
-                if grill["thingName"] not in grills_status:
-                    _LOGGER.warning(f"Missing Data for {grill['thingName']}")
-
-            try:
-                # s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                # s.connect((config["graphite_host"], int(config["graphite_port"])))
-                # for k, v in unpack_dict([], grills_status):
-                #     message = f"traeger.{k} {v} {int(last_collect)}\r\n"
-                #     _LOGGER.debug(f"Sending to Graphite: {message}")
-                #     s.send(message.encode())
-                # s.close()
-                for k, v in unpack_dict([], grills_status):
-                    metric_path = f"traeger.{k}"
-                    send_data_to_graphite(config["graphite_host"], int(config["graphite_port"]), metric_path, v, last_collect)
-
-            except Exception as e:
-                _LOGGER.error(e)
-
-            next_collect = last_collect + 60
-            until_collect = next_collect - time.time()
-            if until_collect > 0:
-                _LOGGER.debug(f"Sleeeping {until_collect}")
-                time.sleep(until_collect)
-            else:
-                _LOGGER.debug(f"Late for next collection {until_collect}")
-
-    finally:
-        await traeger.close()
+    while True:
+        try:
+            traeger = Traeger(config['username'], config['password'], request_library=aiohttp.ClientSession)
+            await traeger.initialize()
+            await collect_data(config, traeger)
+        except Exception as e:
+            _LOGGER.error(f"Error in data collection loop: {e}")
+            _LOGGER.info("Restarting data collection due to WebSocket error...")
+            await asyncio.sleep(5)  # Wait a bit before retrying
+        finally:
+            await traeger.close()
 
 if __name__ == "__main__":
     asyncio.run(main())
