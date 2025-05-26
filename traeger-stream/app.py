@@ -430,52 +430,67 @@ def main():
                 # Controls
                 st.subheader("Controls")
                 
-                col1, col2, col3 = st.columns(3)
-                
+                # Grill temperature control
+                st.write("**Grill Temperature**")
+                col1, col2 = st.columns([3, 1])
                 with col1:
-                    # Temperature control
                     new_temp = st.number_input(
                         "Set Grill Temperature",
                         min_value=165,
                         max_value=500,
                         value=int(current.grill_set_temperature or 225),
-                        step=5
+                        step=5,
+                        label_visibility="collapsed"
                     )
-                    if st.button("Set Temperature", type="primary"):
+                with col2:
+                    if st.button("Set", key="set_grill_temp", type="primary"):
                         cmd = GrillCommand.set_temperature(
                             st.session_state.selected_grill,
                             new_temp
                         )
                         run_async(st.session_state.client.send_command(cmd))
-                        st.success(f"Set temperature to {new_temp}°F")
+                        st.success(f"Set grill to {new_temp}°F")
+                
+                # Probe controls
+                st.write("**Probe Targets**")
+                st.caption("Note: The Traeger API may set all probe targets to the same value")
+                probe_cols = st.columns(len(current.probes) if current.probes else 2)
+                
+                for idx, (col, probe) in enumerate(zip(probe_cols, current.probes or [])):
+                    with col:
+                        probe_name = probe.name if probe.name != f"Probe {idx+1}" else f"Probe {idx+1}"
+                        st.write(f"*{probe_name}*")
                         
-                with col2:
-                    # Probe target
-                    if current.probes:
+                        # Show current temp and connection status
+                        if probe.is_connected:
+                            st.caption(f"Current: {probe.temperature or '--'}°F")
+                        else:
+                            st.caption("Not connected")
+                        
+                        # Target temperature input
                         probe_target = st.number_input(
-                            "Set Probe Target",
+                            f"Target for {probe_name}",
                             min_value=100,
                             max_value=250,
-                            value=int(current.probes[0].target_temperature or 165),
-                            step=1
+                            value=int(probe.target_temperature or 165),
+                            step=1,
+                            key=f"probe_target_{idx}",
+                            label_visibility="collapsed",
+                            disabled=not probe.is_connected
                         )
-                        if st.button("Set Probe Target"):
+                        
+                        if st.button("Set", key=f"set_probe_{idx}", disabled=not probe.is_connected):
                             cmd = GrillCommand.set_probe_temperature(
                                 st.session_state.selected_grill,
-                                probe_target
+                                probe_target,
+                                probe_index=idx
                             )
                             run_async(st.session_state.client.send_command(cmd))
-                            st.success(f"Set probe target to {probe_target}°F")
-                            
-                with col3:
-                    # Shutdown
-                    st.write("")  # Spacing
-                    st.write("")  # Spacing
-                    if st.button("Shutdown Grill", type="secondary"):
-                        if st.checkbox("Confirm shutdown"):
-                            cmd = GrillCommand.shutdown(st.session_state.selected_grill)
-                            run_async(st.session_state.client.send_command(cmd))
-                            st.warning("Shutdown command sent")
+                            st.success(f"Set {probe_name} target to {probe_target}°F")
+                
+                # If no probes connected
+                if not current.probes:
+                    st.info("No probes connected")
                             
             else:
                 st.info("Waiting for data...")

@@ -240,5 +240,5 @@ This project is licensed under the GNU General Public License v2.0 - see the LIC
 
 ## Acknowledgments
 
-- Learned from this great [hass-traeger](https://github.com/sebirdman/hass_traeger) project
+- Learned from this great project: [hass-traeger](https://github.com/sebirdman/hass_traeger)
 - Uses Traeger's unofficial API (subject to change)
