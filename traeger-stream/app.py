@@ -217,6 +217,7 @@ def main():
                     
             # Refresh interval
             refresh_rate = st.slider("Refresh Rate (seconds)", 1, 10, 2)
+            st.session_state.refresh_rate = refresh_rate
             
             # Data window
             window_hours = st.slider("Data Window (hours)", 1, 12, 2)
@@ -368,12 +369,12 @@ def main():
             else:
                 st.info("Waiting for data...")
                 
-            # Auto-refresh for live data
-            time.sleep(refresh_rate)
-            st.rerun()
+            # Mark that we're in the live tab
+            st.session_state.current_tab = "live"
         
         with tab2:
             # Historical data tab
+            st.session_state.current_tab = "historical"
             st.subheader("📈 Historical Data")
             
             if st.session_state.client and st.session_state.client.storage:
@@ -404,6 +405,46 @@ def main():
                         df['timestamp'] = pd.to_datetime(df['timestamp'])
                         df = df.sort_values('timestamp')
                         
+                        # Rename columns to match expected format
+                        df = df.rename(columns={
+                            'grill_temperature': 'grill_temp',
+                            'grill_set_temperature': 'grill_set',  # Changed from 'set_temp'
+                            'probe_temperature': 'probe_0_temp',   # Changed to match probe naming
+                            'probe_set_temperature': 'probe_0_target',
+                            'fan_level': 'fan_speed'
+                        })
+                        
+                        # Also get probe data from the probe_data table
+                        probe_data = run_async(storage.get_probe_data(
+                            grill_id=st.session_state.selected_grill,
+                            start_time=start_datetime,
+                            end_time=end_datetime
+                        ))
+                        
+                        if probe_data:
+                            # Group probe data by timestamp and probe name
+                            probe_df = pd.DataFrame(probe_data)
+                            probe_df['timestamp'] = pd.to_datetime(probe_df['timestamp'])
+                            
+                            # Pivot probe data to get separate columns for each probe
+                            for i, probe_name in enumerate(['BT0', 'BT1', 'BT2', 'BT3']):
+                                probe_subset = probe_df[probe_df['probe_name'] == probe_name]
+                                if not probe_subset.empty:
+                                    # Merge probe data with main dataframe
+                                    probe_subset = probe_subset.rename(columns={
+                                        'temperature': f'probe_{i}_temp',
+                                        'target_temperature': f'probe_{i}_target'
+                                    })
+                                    # Select only the columns we need
+                                    probe_subset = probe_subset[['timestamp', f'probe_{i}_temp', f'probe_{i}_target']]
+                                    # Merge on timestamp
+                                    df = pd.merge(df, probe_subset, on='timestamp', how='outer', suffixes=('', '_y'))
+                                    # Drop duplicate columns
+                                    df = df.loc[:, ~df.columns.str.endswith('_y')]
+                        
+                        # Sort by timestamp after merging
+                        df = df.sort_values('timestamp')
+                        
                         # Create historical chart
                         fig = create_temperature_chart(df)
                         st.plotly_chart(fig, use_container_width=True)
@@ -415,11 +456,11 @@ def main():
                         with col1:
                             st.metric("Records", len(df))
                         with col2:
-                            st.metric("Avg Grill Temp", f"{df['grill_temperature'].mean():.1f}°F")
+                            st.metric("Avg Grill Temp", f"{df['grill_temp'].mean():.1f}°F")
                         with col3:
-                            st.metric("Max Grill Temp", f"{df['grill_temperature'].max():.1f}°F")
+                            st.metric("Max Grill Temp", f"{df['grill_temp'].max():.1f}°F")
                         with col4:
-                            st.metric("Min Grill Temp", f"{df['grill_temperature'].min():.1f}°F")
+                            st.metric("Min Grill Temp", f"{df['grill_temp'].min():.1f}°F")
                         
                         # Download data
                         csv = df.to_csv(index=False)
@@ -438,6 +479,13 @@ def main():
         st.info("Connecting to Traeger services...")
     else:
         st.info("Please select a grill from the sidebar.")
+    
+    # Auto-refresh only if on live tab
+    if (st.session_state.connected and 
+        st.session_state.selected_grill and 
+        st.session_state.get('current_tab') == 'live'):
+        time.sleep(st.session_state.get('refresh_rate', 2))
+        st.rerun()
 
 
 if __name__ == "__main__":
