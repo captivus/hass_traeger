@@ -346,7 +346,7 @@ class TraegerClient:
             pellet_level=status.pellet_level,
             fan_level=status.fan_speed,
             fan_mode=None,  # Not available in status
-            fire_state=status.state.value if status.state else None,
+            fire_state=status.state.name if status.state else None,
             smoke_level=None,  # Not available in status
             wifi_signal=None,  # Not available in status
             probes=status.probes,
