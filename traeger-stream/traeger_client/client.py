@@ -367,6 +367,7 @@ class TraegerClient:
             if resp.status != 200:
                 text = await resp.text()
                 raise Exception(f"Command failed: {resp.status} - {text}")
+    
                 
     def get_status(self, thing_name: str) -> Optional[GrillStatus]:
         """Get current status for a grill."""

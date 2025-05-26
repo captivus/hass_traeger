@@ -14,7 +14,6 @@ import json
 import nest_asyncio
 
 from traeger_client import TraegerClient
-from traeger_client.models import GrillCommand
 from streaming import DataStream
 from pathlib import Path
 
@@ -35,7 +34,14 @@ TIMEZONE = os.getenv('TIMEZONE', 'America/Chicago')
 # Helper to run async functions in Streamlit
 def run_async(coro):
     """Run async coroutine in Streamlit context."""
-    loop = asyncio.new_event_loop()
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    
+    # Use nest_asyncio to allow running in existing loop
+    nest_asyncio.apply()
     return loop.run_until_complete(coro)
 
 # Page config
@@ -240,6 +246,7 @@ def main():
             run_async(connect_to_traeger())
             st.rerun()
     
+    
     # Sidebar
     with st.sidebar:
         st.header("Settings")
@@ -427,70 +434,6 @@ def main():
                 fig = create_temperature_chart(df)
                 st.plotly_chart(fig, use_container_width=True)
                 
-                # Controls
-                st.subheader("Controls")
-                
-                # Grill temperature control
-                st.write("**Grill Temperature**")
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    new_temp = st.number_input(
-                        "Set Grill Temperature",
-                        min_value=165,
-                        max_value=500,
-                        value=int(current.grill_set_temperature or 225),
-                        step=5,
-                        label_visibility="collapsed"
-                    )
-                with col2:
-                    if st.button("Set", key="set_grill_temp", type="primary"):
-                        cmd = GrillCommand.set_temperature(
-                            st.session_state.selected_grill,
-                            new_temp
-                        )
-                        run_async(st.session_state.client.send_command(cmd))
-                        st.success(f"Set grill to {new_temp}°F")
-                
-                # Probe controls
-                st.write("**Probe Targets**")
-                st.caption("Note: The Traeger API may set all probe targets to the same value")
-                probe_cols = st.columns(len(current.probes) if current.probes else 2)
-                
-                for idx, (col, probe) in enumerate(zip(probe_cols, current.probes or [])):
-                    with col:
-                        probe_name = probe.name if probe.name != f"Probe {idx+1}" else f"Probe {idx+1}"
-                        st.write(f"*{probe_name}*")
-                        
-                        # Show current temp and connection status
-                        if probe.is_connected:
-                            st.caption(f"Current: {probe.temperature or '--'}°F")
-                        else:
-                            st.caption("Not connected")
-                        
-                        # Target temperature input
-                        probe_target = st.number_input(
-                            f"Target for {probe_name}",
-                            min_value=100,
-                            max_value=250,
-                            value=int(probe.target_temperature or 165),
-                            step=1,
-                            key=f"probe_target_{idx}",
-                            label_visibility="collapsed",
-                            disabled=not probe.is_connected
-                        )
-                        
-                        if st.button("Set", key=f"set_probe_{idx}", disabled=not probe.is_connected):
-                            cmd = GrillCommand.set_probe_temperature(
-                                st.session_state.selected_grill,
-                                probe_target,
-                                probe_index=idx
-                            )
-                            run_async(st.session_state.client.send_command(cmd))
-                            st.success(f"Set {probe_name} target to {probe_target}°F")
-                
-                # If no probes connected
-                if not current.probes:
-                    st.info("No probes connected")
                             
             else:
                 st.info("Waiting for data...")

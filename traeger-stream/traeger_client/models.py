@@ -87,27 +87,6 @@ class GrillCommand(BaseModel):
     command: str
     
     @classmethod
-    def set_temperature(cls, thing_name: str, temp: int) -> "GrillCommand":
-        """Create command to set grill temperature."""
-        return cls(thing_name=thing_name, command=f"11,{temp}")
-    
-    @classmethod
-    def set_probe_temperature(cls, thing_name: str, temp: int, probe_index: int = 0) -> "GrillCommand":
-        """Create command to set probe target temperature.
-        
-        Args:
-            thing_name: Grill identifier
-            temp: Target temperature in Fahrenheit
-            probe_index: Which probe to set (0-based index)
-        
-        Note: The Traeger API may use the same command for all probes,
-        or may have different command codes. This needs testing.
-        """
-        # Command 14 appears to set probe temperature
-        # TODO: Determine if different probes use different command codes
-        return cls(thing_name=thing_name, command=f"14,{temp}")
-    
-    @classmethod
     def power_on(cls, thing_name: str) -> "GrillCommand":
         """Create command to power on grill."""
         return cls(thing_name=thing_name, command="17")
