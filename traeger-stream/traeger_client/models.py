@@ -28,6 +28,8 @@ class ProbeData(BaseModel):
     target_temperature: Optional[float] = None
     is_connected: bool = False
     alarm_fired: bool = False
+    battery_level: Optional[int] = None
+    ambient_temp: Optional[float] = None
 
 
 class GrillStatus(BaseModel):

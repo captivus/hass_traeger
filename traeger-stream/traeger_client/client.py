@@ -250,14 +250,17 @@ class TraegerClient:
         # Parse probes
         probes = []
         for acc in status_data.get("acc", []):
-            if acc.get("type") == "probe":
+            if acc.get("type") == "btprobe":
+                btprobe_data = acc.get("btprobe", {})
                 probe = ProbeData(
                     id=acc["uuid"],
-                    name=acc.get("name", f"Probe {len(probes) + 1}"),
-                    temperature=acc.get("temperature"),
-                    target_temperature=acc.get("alarm_set"),
-                    is_connected=acc.get("connected", False),
-                    alarm_fired=acc.get("alarm_fired", False)
+                    name=acc.get("channel", f"Probe {len(probes) + 1}"),
+                    temperature=btprobe_data.get("get_temp"),
+                    target_temperature=btprobe_data.get("set_temp"),
+                    is_connected=acc.get("con", False) == 1,
+                    alarm_fired=btprobe_data.get("alarm_fired", 0) == 1,
+                    battery_level=btprobe_data.get("batt"),
+                    ambient_temp=btprobe_data.get("ambient_temp")
                 )
                 probes.append(probe)
                 
