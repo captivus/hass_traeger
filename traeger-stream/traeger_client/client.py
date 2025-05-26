@@ -15,7 +15,7 @@ import ssl
 
 from .models import GrillStatus, ProbeData, GrillState, GrillCommand
 from .storage import DataStorage
-from .temperature_predictor import TemperaturePredictor
+from .simple_temperature_predictor import SimpleTemperaturePredictor
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ class TraegerClient:
             self.storage = DataStorage(Path(db_path) if db_path else None)
             
         # Temperature predictor
-        self.predictor = TemperaturePredictor()
+        self.predictor = SimpleTemperaturePredictor()
             
         # Store main event loop for cross-thread operations
         self._main_loop: Optional[asyncio.AbstractEventLoop] = None
@@ -303,14 +303,10 @@ class TraegerClient:
                 confidence = None
                 if (current_temp is not None and target_temp is not None and 
                     current_temp < target_temp):
-                    prediction = self.predictor.predict(
-                        current_temp=current_temp,
-                        target_temp=target_temp,
-                        grill_temp=grill_temp,
-                        grill_set_temp=grill_set_temp,
-                        ambient_temp=ambient_temp,
-                        probe_id=probe_id
-                    )
+                    # Add temperature reading to predictor
+                    self.predictor.add_reading(probe_id, current_temp)
+                    # Get prediction
+                    prediction = self.predictor.predict_time_to_target(probe_id, target_temp)
                     if prediction:
                         predicted_time, confidence = prediction
                 
@@ -326,6 +322,10 @@ class TraegerClient:
                     predicted_time_to_target=predicted_time,
                     prediction_confidence=confidence
                 )
+                if predicted_time is not None:
+                    print(f"DEBUG CLIENT: Probe {probe_id} has prediction: {predicted_time} minutes")
+                else:
+                    print(f"DEBUG CLIENT: Probe {probe_id} has NO prediction")
                 probes.append(probe)
                 
         return GrillStatus(

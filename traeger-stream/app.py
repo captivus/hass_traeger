@@ -105,6 +105,10 @@ async def load_historical_data_to_buffer(storage, stream, thing_name: str, hours
     if not storage or not stream:
         return
         
+    # Clear predictor history when loading new historical data
+    if hasattr(st.session_state, 'client') and st.session_state.client:
+        st.session_state.client.predictor.clear_history()
+        
     # Calculate time range
     end_time = datetime.now()
     start_time = end_time - timedelta(hours=hours)
@@ -146,6 +150,15 @@ async def load_historical_data_to_buffer(storage, stream, thing_name: str, hours
                 timestamp = timestamp.to_pydatetime().replace(tzinfo=None)  # Make timezone-naive for consistency
                 
                 historical_data.append((timestamp, status))
+                
+                # Add historical probe temperatures to predictor
+                for probe in status.probes:
+                    if probe.temperature is not None:
+                        st.session_state.client.predictor.add_reading(
+                            probe.id, 
+                            probe.temperature,
+                            timestamp.timestamp()
+                        )
         except Exception as e:
             logger.error(f"Error parsing historical message: {e}")
             continue
@@ -391,12 +404,15 @@ def main():
                         )
                         # Show prediction if available
                         if probe.predicted_time_to_target is not None:
-                            from traeger_client.temperature_predictor import TemperaturePredictor
-                            predictor = TemperaturePredictor()
+                            print(f"DEBUG APP: Showing prediction for probe {probe.id}: {probe.predicted_time_to_target} minutes")
+                            from traeger_client.simple_temperature_predictor import SimpleTemperaturePredictor
+                            predictor = SimpleTemperaturePredictor()
                             prediction_str = predictor.format_prediction(
                                 (probe.predicted_time_to_target, probe.prediction_confidence)
                             )
                             st.caption(f"⏱️ {prediction_str}")
+                        else:
+                            print(f"DEBUG APP: No prediction for probe {probe.id}")
                     else:
                         st.metric("Probe 1", "--°F")
                         
@@ -410,12 +426,15 @@ def main():
                         )
                         # Show prediction if available
                         if probe.predicted_time_to_target is not None:
-                            from traeger_client.temperature_predictor import TemperaturePredictor
-                            predictor = TemperaturePredictor()
+                            print(f"DEBUG APP: Showing prediction for probe {probe.id}: {probe.predicted_time_to_target} minutes")
+                            from traeger_client.simple_temperature_predictor import SimpleTemperaturePredictor
+                            predictor = SimpleTemperaturePredictor()
                             prediction_str = predictor.format_prediction(
                                 (probe.predicted_time_to_target, probe.prediction_confidence)
                             )
                             st.caption(f"⏱️ {prediction_str}")
+                        else:
+                            print(f"DEBUG APP: No prediction for probe {probe.id}")
                     else:
                         st.metric("Probe 2", "--°F")
                     
