@@ -407,9 +407,7 @@ def main():
                             print(f"DEBUG APP: Showing prediction for probe {probe.id}: {probe.predicted_time_to_target} minutes")
                             from traeger_client.simple_temperature_predictor import SimpleTemperaturePredictor
                             predictor = SimpleTemperaturePredictor()
-                            prediction_str = predictor.format_prediction(
-                                (probe.predicted_time_to_target, probe.prediction_confidence)
-                            )
+                            prediction_str = predictor.format_prediction(probe.predicted_time_to_target)
                             st.caption(f"⏱️ {prediction_str}")
                         else:
                             print(f"DEBUG APP: No prediction for probe {probe.id}")
@@ -429,9 +427,7 @@ def main():
                             print(f"DEBUG APP: Showing prediction for probe {probe.id}: {probe.predicted_time_to_target} minutes")
                             from traeger_client.simple_temperature_predictor import SimpleTemperaturePredictor
                             predictor = SimpleTemperaturePredictor()
-                            prediction_str = predictor.format_prediction(
-                                (probe.predicted_time_to_target, probe.prediction_confidence)
-                            )
+                            prediction_str = predictor.format_prediction(probe.predicted_time_to_target)
                             st.caption(f"⏱️ {prediction_str}")
                         else:
                             print(f"DEBUG APP: No prediction for probe {probe.id}")

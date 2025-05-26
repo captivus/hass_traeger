@@ -136,10 +136,8 @@ async def test_predictor():
             
             prediction = predictor.predict_time_to_target(probe_id, current['target'])
             
-            if prediction:
-                minutes, confidence = prediction
-                print(f"Prediction: {minutes:.1f} minutes to reach {current['target']}°F")
-                print(f"Confidence: {confidence:.1%}")
+            if prediction is not None:
+                print(f"Prediction: {prediction:.1f} minutes to reach {current['target']}°F")
             else:
                 print("No prediction available (temperature may be decreasing)")
 

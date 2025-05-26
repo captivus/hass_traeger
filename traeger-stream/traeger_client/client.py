@@ -300,15 +300,12 @@ class TraegerClient:
                 
                 # Get prediction if temperatures are available
                 predicted_time = None
-                confidence = None
                 if (current_temp is not None and target_temp is not None and 
                     current_temp < target_temp):
                     # Add temperature reading to predictor
                     self.predictor.add_reading(probe_id, current_temp)
                     # Get prediction
-                    prediction = self.predictor.predict_time_to_target(probe_id, target_temp)
-                    if prediction:
-                        predicted_time, confidence = prediction
+                    predicted_time = self.predictor.predict_time_to_target(probe_id, target_temp)
                 
                 probe = ProbeData(
                     id=probe_id,
@@ -319,8 +316,7 @@ class TraegerClient:
                     alarm_fired=btprobe_data.get("alarm_fired", 0) == 1,
                     battery_level=btprobe_data.get("batt"),
                     ambient_temp=btprobe_data.get("ambient_temp"),
-                    predicted_time_to_target=predicted_time,
-                    prediction_confidence=confidence
+                    predicted_time_to_target=predicted_time
                 )
                 if predicted_time is not None:
                     print(f"DEBUG CLIENT: Probe {probe_id} has prediction: {predicted_time} minutes")

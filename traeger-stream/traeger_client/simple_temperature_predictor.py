@@ -36,7 +36,7 @@ class SimpleTemperaturePredictor:
         if len(self.temp_history[probe_id]) % 10 == 0:  # Log every 10th reading
             print(f"DEBUG: Probe {probe_id} now has {len(self.temp_history[probe_id])} readings")
     
-    def predict_time_to_target(self, probe_id: str, target_temperature: float) -> Optional[Tuple[float, float]]:
+    def predict_time_to_target(self, probe_id: str, target_temperature: float) -> Optional[float]:
         """Predict time to reach target temperature.
         
         Args:
@@ -44,7 +44,7 @@ class SimpleTemperaturePredictor:
             target_temperature: Target temperature in °F
             
         Returns:
-            Tuple of (minutes_to_target, confidence) or None if cannot predict
+            Minutes to target or None if cannot predict
         """
         if probe_id not in self.temp_history or len(self.temp_history[probe_id]) < 3:
             print(f"DEBUG: Not enough data for probe {probe_id}. History: {len(self.temp_history.get(probe_id, []))}")
@@ -56,7 +56,7 @@ class SimpleTemperaturePredictor:
         # Already at or above target
         if current_temp >= target_temperature:
             print(f"DEBUG: Probe {probe_id} already at target. Current: {current_temp}, Target: {target_temperature}")
-            return (0.0, 1.0)
+            return 0.0
         
         # Extract time and temperature arrays
         times = np.array([t for t, _ in history])
@@ -112,11 +112,8 @@ class SimpleTemperaturePredictor:
         # Convert from seconds to minutes
         minutes_to_target = time_to_target / 60
         
-        # Calculate confidence based on data quality
-        confidence = self._calculate_confidence(history, current_velocity, acceleration)
-        
-        print(f"DEBUG: Prediction for probe {probe_id}: {minutes_to_target:.1f} minutes (confidence: {confidence:.2f})")
-        return (minutes_to_target, confidence)
+        print(f"DEBUG: Prediction for probe {probe_id}: {minutes_to_target:.1f} minutes")
+        return minutes_to_target
     
     def _calculate_derivative(self, times: np.ndarray, values: np.ndarray) -> float:
         """Calculate the first derivative using linear regression."""
@@ -137,52 +134,11 @@ class SimpleTemperaturePredictor:
         # For y = at² + bt + c, acceleration = 2a
         return 2 * coeffs[0]
     
-    def _calculate_confidence(self, history: List[Tuple[float, float]], 
-                            velocity: float, acceleration: float) -> float:
-        """Calculate prediction confidence based on data quality."""
-        # Base confidence on number of data points
-        n_points = len(history)
-        point_confidence = min(1.0, n_points / 10.0)  # Max confidence at 10+ points
-        
-        # Reduce confidence for very low velocity
-        if velocity < 0.1:  # Less than 0.1°F/second
-            velocity_confidence = 0.3
-        else:
-            velocity_confidence = 0.8
-        
-        # Check for consistent heating (low variance in recent derivatives)
-        if n_points >= 5:
-            recent_times = np.array([t for t, _ in history[-5:]])
-            recent_temps = np.array([temp for _, temp in history[-5:]])
-            recent_times_norm = recent_times - recent_times[0]
-            
-            # Calculate instantaneous rates
-            rates = []
-            for i in range(1, len(recent_times_norm)):
-                dt = recent_times_norm[i] - recent_times_norm[i-1]
-                if dt > 0:
-                    rate = (recent_temps[i] - recent_temps[i-1]) / dt
-                    rates.append(rate)
-            
-            if rates:
-                rate_variance = np.var(rates)
-                # Lower variance = higher confidence
-                consistency_confidence = np.exp(-rate_variance / 0.1)  # Decay factor
-            else:
-                consistency_confidence = 0.5
-        else:
-            consistency_confidence = 0.5
-        
-        # Combine confidence factors
-        confidence = point_confidence * velocity_confidence * consistency_confidence
-        
-        return min(0.95, confidence)  # Cap at 95%
-    
-    def format_prediction(self, prediction: Optional[Tuple[float, float]]) -> str:
+    def format_prediction(self, prediction: Optional[float]) -> str:
         """Format prediction for display.
         
         Args:
-            prediction: Tuple of (minutes, confidence) or None
+            prediction: Minutes to target or None
             
         Returns:
             Formatted string for display
@@ -190,24 +146,14 @@ class SimpleTemperaturePredictor:
         if prediction is None:
             return "Temperature not increasing"
         
-        minutes, confidence = prediction
+        minutes = prediction
         
         if minutes < 1:
             return "Less than 1 minute"
         elif minutes > 180:  # More than 3 hours
             return "More than 3 hours"
-        elif confidence > 0.7:
-            # High confidence - show precise time
-            if minutes < 60:
-                return f"~{int(minutes)} minutes"
-            else:
-                hours = minutes / 60
-                return f"~{hours:.1f} hours"
+        elif minutes < 60:
+            return f"~{int(minutes)} minutes"
         else:
-            # Low confidence - round to intervals
-            if minutes < 60:
-                rounded = round(minutes / 5) * 5
-                return f"~{int(rounded)} minutes (estimate)"
-            else:
-                hours = round(minutes / 60 * 2) / 2  # Round to 0.5 hours
-                return f"~{hours:.1f} hours (estimate)"
+            hours = minutes / 60
+            return f"~{hours:.1f} hours"
