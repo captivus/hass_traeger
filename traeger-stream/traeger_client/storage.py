@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from contextlib import asynccontextmanager
 
-from .models import GrillState, ProbeData
+from .models import GrillStateData, ProbeData
 
 
 class DataStorage:
@@ -85,7 +85,7 @@ class DataStorage:
             
             conn.commit()
     
-    async def save_grill_state(self, state: GrillState) -> None:
+    async def save_grill_state(self, state: GrillStateData) -> None:
         """Save a grill state to the database.
         
         Args:
@@ -94,7 +94,7 @@ class DataStorage:
         async with self._lock:
             await asyncio.to_thread(self._save_grill_state_sync, state)
     
-    def _save_grill_state_sync(self, state: GrillState) -> None:
+    def _save_grill_state_sync(self, state: GrillStateData) -> None:
         """Synchronous method to save grill state."""
         with sqlite3.connect(self.db_path) as conn:
             # Save main grill state

@@ -79,6 +79,28 @@ class GrillStatus(BaseModel):
         ]
 
 
+class GrillStateData(BaseModel):
+    """Data model for storing grill state in database."""
+    grill_id: str
+    grill_name: Optional[str] = None
+    is_connected: bool = False
+    firmware_version: Optional[str] = None
+    ambient_temperature: Optional[float] = None
+    grill_temperature: Optional[float] = None
+    grill_set_temperature: Optional[float] = None
+    probe_temperature: Optional[float] = None
+    probe_set_temperature: Optional[float] = None
+    probe_alarm_fired: bool = False
+    pellet_level: Optional[int] = None
+    fan_level: Optional[int] = None
+    fan_mode: Optional[str] = None
+    fire_state: Optional[str] = None
+    smoke_level: Optional[int] = None
+    wifi_signal: Optional[int] = None
+    probes: List[ProbeData] = Field(default_factory=list)
+    raw_data: Optional[Dict[str, Any]] = None
+
+
 class GrillCommand(BaseModel):
     """Commands that can be sent to the grill."""
     thing_name: str

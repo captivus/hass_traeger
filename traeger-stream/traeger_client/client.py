@@ -13,7 +13,7 @@ import aiohttp
 import paho.mqtt.client as mqtt
 import ssl
 
-from .models import GrillStatus, ProbeData, GrillState, GrillCommand
+from .models import GrillStatus, ProbeData, GrillState, GrillCommand, GrillStateData
 from .storage import DataStorage
 
 logger = logging.getLogger(__name__)
@@ -56,9 +56,15 @@ class TraegerClient:
         self.storage: Optional[DataStorage] = None
         if enable_storage:
             self.storage = DataStorage(Path(db_path) if db_path else None)
+            
+        # Store main event loop for cross-thread operations
+        self._main_loop: Optional[asyncio.AbstractEventLoop] = None
         
     async def connect(self):
         """Connect to Traeger services."""
+        # Store the current event loop
+        self._main_loop = asyncio.get_running_loop()
+        
         self.session = aiohttp.ClientSession()
         await self._authenticate()
         await self._discover_grills()
@@ -223,22 +229,22 @@ class TraegerClient:
             status = self._parse_status(grill_id, data)
             self._grill_status[grill_id] = status
             
-            # Save to database if storage is enabled (synchronously for now)
+            # Save to database if storage is enabled
             if self.storage:
-                # Save raw message
+                # Queue the save operations to be run in the main event loop
                 try:
-                    # Get or create event loop for this thread
-                    try:
-                        loop = asyncio.get_event_loop()
-                    except RuntimeError:
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
+                    # Save raw message
+                    asyncio.run_coroutine_threadsafe(
+                        self._save_raw_message(message.topic, message.payload.decode()),
+                        self._main_loop
+                    )
                     
-                    # Run the async save operations
-                    loop.run_until_complete(self._save_raw_message(message.topic, message.payload.decode()))
-                    
+                    # Save grill state
                     grill_state = self._convert_to_grill_state(status)
-                    loop.run_until_complete(self.storage.save_grill_state(grill_state))
+                    asyncio.run_coroutine_threadsafe(
+                        self.storage.save_grill_state(grill_state),
+                        self._main_loop
+                    )
                 except Exception as e:
                     logger.error(f"Error saving to database: {e}")
             
@@ -313,7 +319,7 @@ class TraegerClient:
             raw_status=data
         )
     
-    def _convert_to_grill_state(self, status: GrillStatus) -> GrillState:
+    def _convert_to_grill_state(self, status: GrillStatus) -> GrillStateData:
         """Convert GrillStatus to GrillState for database storage."""
         # Get probe temperature if available
         probe_temp = None
@@ -326,7 +332,7 @@ class TraegerClient:
             probe_set_temp = probe.target_temperature
             probe_alarm = probe.alarm_fired
         
-        return GrillState(
+        return GrillStateData(
             grill_id=status.thing_name,
             grill_name=status.friendly_name,
             is_connected=status.connected,
