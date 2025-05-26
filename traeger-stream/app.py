@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 import os
 import logging
 import json
+import time
 import nest_asyncio
 
 from traeger_client import TraegerClient
@@ -333,10 +334,15 @@ def main():
                 
     # Main content
     if st.session_state.connected and st.session_state.selected_grill:
-        # Create tabs and track which one is selected
-        tabs = st.tabs(["📊 Live Monitor", "📈 Historical Data"])
+        # Create tabs
+        tab1, tab2 = st.tabs(["📊 Live Monitor", "📈 Historical Data"])
         
-        with tabs[0]:
+        # Initialize tab tracking
+        if 'active_tab' not in st.session_state:
+            st.session_state.active_tab = 0
+        
+        with tab1:
+            st.session_state.active_tab = 0
             
             # Load historical data if buffer is empty
             buffer = st.session_state.stream.get_buffer()
@@ -435,29 +441,10 @@ def main():
             else:
                 st.info("Waiting for data...")
                 
-            # Add a container for auto-refresh at the very end
-            # This uses st_autorefresh component if available, otherwise manual refresh
-            st.empty()  # Spacer
-            
-            # Auto-refresh using JavaScript injection
-            refresh_rate = st.session_state.get('refresh_rate', 2)
-            if refresh_rate > 0:
-                st.markdown(
-                    f"""
-                    <script>
-                        // Only refresh if we're on the Live Monitor tab
-                        const activeTab = document.querySelector('[role="tab"][aria-selected="true"]');
-                        if (activeTab && activeTab.textContent.includes('Live Monitor')) {{
-                            setTimeout(() => {{
-                                window.location.reload();
-                            }}, {refresh_rate * 1000});
-                        }}
-                    </script>
-                    """,
-                    unsafe_allow_html=True
-                )
         
-        with tabs[1]:
+        with tab2:
+            st.session_state.active_tab = 1
+            
             # Historical data tab
             st.subheader("📈 Historical Data")
             
@@ -567,6 +554,15 @@ def main():
     else:
         st.info("Please select a grill from the sidebar.")
     
+    # Auto-refresh logic outside of tabs
+    # Only refresh if we're on the Live Monitor tab
+    if (st.session_state.connected and 
+        st.session_state.selected_grill and 
+        st.session_state.get('active_tab', 0) == 0):
+        refresh_rate = st.session_state.get('refresh_rate', 2)
+        if refresh_rate > 0:
+            time.sleep(refresh_rate)
+            st.rerun()
 
 
 if __name__ == "__main__":
