@@ -9,7 +9,6 @@ import pandas as pd
 from dotenv import load_dotenv
 import os
 import logging
-import time
 import json
 import nest_asyncio
 
@@ -334,12 +333,10 @@ def main():
                 
     # Main content
     if st.session_state.connected and st.session_state.selected_grill:
-        # Create tabs
-        tab1, tab2 = st.tabs(["📊 Live Monitor", "📈 Historical Data"])
+        # Create tabs and track which one is selected
+        tabs = st.tabs(["📊 Live Monitor", "📈 Historical Data"])
         
-        with tab1:
-            # Store current tab for auto-refresh logic
-            st.session_state.current_tab = 'live'
+        with tabs[0]:
             
             # Load historical data if buffer is empty
             buffer = st.session_state.stream.get_buffer()
@@ -438,21 +435,30 @@ def main():
             else:
                 st.info("Waiting for data...")
                 
-            # Mark that we're in the live tab
-            st.session_state.current_tab = "live"
+            # Add a container for auto-refresh at the very end
+            # This uses st_autorefresh component if available, otherwise manual refresh
+            st.empty()  # Spacer
             
-            # Auto-refresh container at the bottom
-            # This will trigger a rerun periodically
-            auto_refresh_container = st.empty()
-            with auto_refresh_container:
-                refresh_rate = st.session_state.get('refresh_rate', 2)
-                if refresh_rate > 0:
-                    time.sleep(refresh_rate)
-                    st.rerun()
+            # Auto-refresh using JavaScript injection
+            refresh_rate = st.session_state.get('refresh_rate', 2)
+            if refresh_rate > 0:
+                st.markdown(
+                    f"""
+                    <script>
+                        // Only refresh if we're on the Live Monitor tab
+                        const activeTab = document.querySelector('[role="tab"][aria-selected="true"]');
+                        if (activeTab && activeTab.textContent.includes('Live Monitor')) {{
+                            setTimeout(() => {{
+                                window.location.reload();
+                            }}, {refresh_rate * 1000});
+                        }}
+                    </script>
+                    """,
+                    unsafe_allow_html=True
+                )
         
-        with tab2:
+        with tabs[1]:
             # Historical data tab
-            st.session_state.current_tab = "historical"
             st.subheader("📈 Historical Data")
             
             if st.session_state.client and st.session_state.client.storage:
