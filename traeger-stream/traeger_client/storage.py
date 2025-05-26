@@ -332,7 +332,45 @@ class DataStorage:
                 writer.writeheader()
                 writer.writerows(probe_data)
         
+        # Also export raw messages if no other data
+        if not grill_states and not probe_data:
+            raw_messages = await self.get_raw_messages(limit=1000)
+            if raw_messages:
+                raw_csv_path = output_path / "raw_messages.csv"
+                with open(raw_csv_path, 'w', newline='') as f:
+                    writer = csv.DictWriter(f, fieldnames=raw_messages[0].keys())
+                    writer.writeheader()
+                    writer.writerows(raw_messages)
+                return 0, len(raw_messages)
+        
         return len(grill_states), len(probe_data)
+    
+    async def get_raw_messages(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Get raw messages from the database.
+        
+        Args:
+            limit: Maximum number of records to return
+            
+        Returns:
+            List of raw message records
+        """
+        async with self._lock:
+            return await asyncio.to_thread(self._get_raw_messages_sync, limit)
+    
+    def _get_raw_messages_sync(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Synchronous method to get raw messages."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            
+            query = "SELECT * FROM raw_messages ORDER BY timestamp DESC"
+            params = []
+            
+            if limit:
+                query += " LIMIT ?"
+                params.append(limit)
+            
+            cursor = conn.execute(query, params)
+            return [dict(row) for row in cursor.fetchall()]
     
     async def get_latest_state(self, grill_id: str) -> Optional[Dict[str, Any]]:
         """Get the latest state for a specific grill.

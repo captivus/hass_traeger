@@ -219,18 +219,28 @@ class TraegerClient:
             grill_id = message.topic.split("/")[-1]
             data = json.loads(message.payload)
             
-            # Save raw message if storage is enabled
-            if self.storage:
-                asyncio.create_task(self._save_raw_message(message.topic, message.payload.decode()))
-            
             # Convert to GrillStatus
             status = self._parse_status(grill_id, data)
             self._grill_status[grill_id] = status
             
-            # Save to database if storage is enabled
+            # Save to database if storage is enabled (synchronously for now)
             if self.storage:
-                grill_state = self._convert_to_grill_state(status)
-                asyncio.create_task(self.storage.save_grill_state(grill_state))
+                # Save raw message
+                try:
+                    # Get or create event loop for this thread
+                    try:
+                        loop = asyncio.get_event_loop()
+                    except RuntimeError:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                    
+                    # Run the async save operations
+                    loop.run_until_complete(self._save_raw_message(message.topic, message.payload.decode()))
+                    
+                    grill_state = self._convert_to_grill_state(status)
+                    loop.run_until_complete(self.storage.save_grill_state(grill_state))
+                except Exception as e:
+                    logger.error(f"Error saving to database: {e}")
             
             # Notify callbacks
             for callback in self._status_callbacks:

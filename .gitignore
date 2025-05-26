@@ -77,3 +77,6 @@ graphite/
 
 # UV
 .python-version
+
+# Claude
+claude.md

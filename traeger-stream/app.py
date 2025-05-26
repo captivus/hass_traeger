@@ -188,6 +188,13 @@ def main():
     """Main Streamlit app."""
     st.title("🔥 Traeger Live Monitor")
     
+    # Auto-connect on startup
+    if not st.session_state.connected and not st.session_state.get('connection_attempted', False):
+        st.session_state.connection_attempted = True
+        with st.spinner("Connecting to Traeger..."):
+            run_async(connect_to_traeger())
+            st.rerun()
+    
     # Sidebar
     with st.sidebar:
         st.header("Settings")
@@ -245,8 +252,8 @@ def main():
             
         else:
             st.error("❌ Disconnected")
-            if st.button("Connect", type="primary"):
-                run_async(connect_to_traeger())
+            if st.button("Reconnect", type="primary"):
+                st.session_state.connection_attempted = False
                 st.rerun()
                 
     # Main content
@@ -361,8 +368,7 @@ def main():
             else:
                 st.info("Waiting for data...")
                 
-            # Auto-refresh
-            placeholder = st.empty()
+            # Auto-refresh for live data
             time.sleep(refresh_rate)
             st.rerun()
         
@@ -429,7 +435,7 @@ def main():
                 st.warning("Data storage is not available")
         
     elif not st.session_state.connected:
-        st.info("Please connect to Traeger services using the sidebar.")
+        st.info("Connecting to Traeger services...")
     else:
         st.info("Please select a grill from the sidebar.")
 
