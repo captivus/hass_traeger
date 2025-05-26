@@ -13,9 +13,10 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 import nest_asyncio
 
-from traeger_client import TraegerClient
+from traeger_client import TraegerClient, DataStorage
 from traeger_client.models import GrillCommand, GrillState
 from streaming import DataStream
+from pathlib import Path
 
 # Allow nested event loops in Streamlit
 nest_asyncio.apply()
@@ -213,6 +214,35 @@ def main():
             # Data window
             window_hours = st.slider("Data Window (hours)", 1, 12, 2)
             
+            # Data Storage
+            st.divider()
+            st.subheader("Data Storage")
+            
+            if st.session_state.client and st.session_state.client.storage:
+                storage = st.session_state.client.storage
+                
+                # Show database path
+                st.info(f"📁 Database: {storage.db_path}")
+                
+                # Export data
+                if st.button("Export to CSV", type="secondary"):
+                    export_path = Path("./exports") / f"traeger_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                    grill_count, probe_count = run_async(storage.export_to_csv(export_path))
+                    st.success(f"✅ Exported {grill_count} grill states and {probe_count} probe records to {export_path}")
+                
+                # Show storage stats
+                if st.session_state.selected_grill:
+                    latest = run_async(storage.get_latest_state(st.session_state.selected_grill))
+                    if latest:
+                        st.caption(f"Latest data: {latest['timestamp']}")
+                    
+                    # Count records
+                    grill_states = run_async(storage.get_grill_states(grill_id=st.session_state.selected_grill))
+                    probe_data = run_async(storage.get_probe_data(grill_id=st.session_state.selected_grill))
+                    st.caption(f"Records: {len(grill_states)} grill states, {len(probe_data)} probe readings")
+            else:
+                st.warning("Data storage is disabled")
+            
         else:
             st.error("❌ Disconnected")
             if st.button("Connect", type="primary"):
@@ -221,116 +251,182 @@ def main():
                 
     # Main content
     if st.session_state.connected and st.session_state.selected_grill:
-        # Get current status
-        buffer = st.session_state.stream.get_buffer()
-        current = buffer.get_latest(st.session_state.selected_grill)
+        # Create tabs
+        tab1, tab2 = st.tabs(["📊 Live Monitor", "📈 Historical Data"])
         
-        if current:
-            # Status indicators
-            col1, col2, col3, col4 = st.columns(4)
+        with tab1:
+            # Get current status
+            buffer = st.session_state.stream.get_buffer()
+            current = buffer.get_latest(st.session_state.selected_grill)
             
-            with col1:
-                st.metric(
-                    "Status",
-                    current.state.name,
-                    delta=None,
-                    delta_color="normal"
-                )
-                
-            with col2:
-                st.metric(
-                    "Grill Temp",
-                    f"{current.grill_temperature or '--'}°F",
-                    delta=f"Set: {current.grill_set_temperature or '--'}°F"
-                )
-                
-            with col3:
-                if current.probes:
-                    probe = current.probes[0]
+            if current:
+                # Status indicators
+                col1, col2, col3, col4 = st.columns(4)
+            
+                with col1:
                     st.metric(
-                        "Probe 1",
-                        f"{probe.temperature or '--'}°F",
-                        delta=f"Target: {probe.target_temperature or '--'}°F"
+                        "Status",
+                        current.state.name,
+                        delta=None,
+                        delta_color="normal"
                     )
-                else:
-                    st.metric("Probe 1", "--°F")
                     
-            with col4:
-                st.metric(
-                    "Fan Speed",
-                    f"{current.fan_speed or 0}%"
-                )
-                
-            # Temperature chart
-            st.subheader("Temperature History")
-            
-            # Get data for plotting
-            df = buffer.get_dataframe(st.session_state.selected_grill)
-            if not df.empty:
-                # Filter to selected window
-                cutoff = datetime.now() - timedelta(hours=window_hours)
-                df = df[df["timestamp"] > cutoff]
-                
-            fig = create_temperature_chart(df)
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Controls
-            st.subheader("Controls")
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                # Temperature control
-                new_temp = st.number_input(
-                    "Set Grill Temperature",
-                    min_value=165,
-                    max_value=500,
-                    value=int(current.grill_set_temperature or 225),
-                    step=5
-                )
-                if st.button("Set Temperature", type="primary"):
-                    cmd = GrillCommand.set_temperature(
-                        st.session_state.selected_grill,
-                        new_temp
+                with col2:
+                    st.metric(
+                        "Grill Temp",
+                        f"{current.grill_temperature or '--'}°F",
+                        delta=f"Set: {current.grill_set_temperature or '--'}°F"
                     )
-                    run_async(st.session_state.client.send_command(cmd))
-                    st.success(f"Set temperature to {new_temp}°F")
                     
-            with col2:
-                # Probe target
-                if current.probes:
-                    probe_target = st.number_input(
-                        "Set Probe Target",
-                        min_value=100,
-                        max_value=250,
-                        value=int(current.probes[0].target_temperature or 165),
-                        step=1
+                with col3:
+                    if current.probes:
+                        probe = current.probes[0]
+                        st.metric(
+                            "Probe 1",
+                            f"{probe.temperature or '--'}°F",
+                            delta=f"Target: {probe.target_temperature or '--'}°F"
+                        )
+                    else:
+                        st.metric("Probe 1", "--°F")
+                        
+                with col4:
+                    st.metric(
+                        "Fan Speed",
+                        f"{current.fan_speed or 0}%"
                     )
-                    if st.button("Set Probe Target"):
-                        cmd = GrillCommand.set_probe_temperature(
+                    
+                # Temperature chart
+                st.subheader("Temperature History")
+                
+                # Get data for plotting
+                df = buffer.get_dataframe(st.session_state.selected_grill)
+                if not df.empty:
+                    # Filter to selected window
+                    cutoff = datetime.now() - timedelta(hours=window_hours)
+                    df = df[df["timestamp"] > cutoff]
+                    
+                fig = create_temperature_chart(df)
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Controls
+                st.subheader("Controls")
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    # Temperature control
+                    new_temp = st.number_input(
+                        "Set Grill Temperature",
+                        min_value=165,
+                        max_value=500,
+                        value=int(current.grill_set_temperature or 225),
+                        step=5
+                    )
+                    if st.button("Set Temperature", type="primary"):
+                        cmd = GrillCommand.set_temperature(
                             st.session_state.selected_grill,
-                            probe_target
+                            new_temp
                         )
                         run_async(st.session_state.client.send_command(cmd))
-                        st.success(f"Set probe target to {probe_target}°F")
+                        st.success(f"Set temperature to {new_temp}°F")
                         
-            with col3:
-                # Shutdown
-                st.write("")  # Spacing
-                st.write("")  # Spacing
-                if st.button("Shutdown Grill", type="secondary"):
-                    if st.checkbox("Confirm shutdown"):
-                        cmd = GrillCommand.shutdown(st.session_state.selected_grill)
-                        run_async(st.session_state.client.send_command(cmd))
-                        st.warning("Shutdown command sent")
-                        
-        else:
-            st.info("Waiting for data...")
+                with col2:
+                    # Probe target
+                    if current.probes:
+                        probe_target = st.number_input(
+                            "Set Probe Target",
+                            min_value=100,
+                            max_value=250,
+                            value=int(current.probes[0].target_temperature or 165),
+                            step=1
+                        )
+                        if st.button("Set Probe Target"):
+                            cmd = GrillCommand.set_probe_temperature(
+                                st.session_state.selected_grill,
+                                probe_target
+                            )
+                            run_async(st.session_state.client.send_command(cmd))
+                            st.success(f"Set probe target to {probe_target}°F")
+                            
+                with col3:
+                    # Shutdown
+                    st.write("")  # Spacing
+                    st.write("")  # Spacing
+                    if st.button("Shutdown Grill", type="secondary"):
+                        if st.checkbox("Confirm shutdown"):
+                            cmd = GrillCommand.shutdown(st.session_state.selected_grill)
+                            run_async(st.session_state.client.send_command(cmd))
+                            st.warning("Shutdown command sent")
+                            
+            else:
+                st.info("Waiting for data...")
+                
+            # Auto-refresh
+            placeholder = st.empty()
+            time.sleep(refresh_rate)
+            st.rerun()
+        
+        with tab2:
+            # Historical data tab
+            st.subheader("📈 Historical Data")
             
-        # Auto-refresh
-        placeholder = st.empty()
-        time.sleep(refresh_rate)
-        st.rerun()
+            if st.session_state.client and st.session_state.client.storage:
+                storage = st.session_state.client.storage
+                
+                # Date range selector
+                col1, col2 = st.columns(2)
+                with col1:
+                    start_date = st.date_input("Start Date", value=datetime.now().date() - timedelta(days=7))
+                with col2:
+                    end_date = st.date_input("End Date", value=datetime.now().date())
+                
+                if st.button("Load Historical Data"):
+                    # Convert dates to datetime
+                    start_datetime = datetime.combine(start_date, datetime.min.time())
+                    end_datetime = datetime.combine(end_date, datetime.max.time())
+                    
+                    # Load data from database
+                    grill_states = run_async(storage.get_grill_states(
+                        grill_id=st.session_state.selected_grill,
+                        start_time=start_datetime,
+                        end_time=end_datetime
+                    ))
+                    
+                    if grill_states:
+                        # Convert to DataFrame
+                        df = pd.DataFrame(grill_states)
+                        df['timestamp'] = pd.to_datetime(df['timestamp'])
+                        df = df.sort_values('timestamp')
+                        
+                        # Create historical chart
+                        fig = create_temperature_chart(df)
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Show statistics
+                        st.subheader("Statistics")
+                        col1, col2, col3, col4 = st.columns(4)
+                        
+                        with col1:
+                            st.metric("Records", len(df))
+                        with col2:
+                            st.metric("Avg Grill Temp", f"{df['grill_temperature'].mean():.1f}°F")
+                        with col3:
+                            st.metric("Max Grill Temp", f"{df['grill_temperature'].max():.1f}°F")
+                        with col4:
+                            st.metric("Min Grill Temp", f"{df['grill_temperature'].min():.1f}°F")
+                        
+                        # Download data
+                        csv = df.to_csv(index=False)
+                        st.download_button(
+                            label="Download CSV",
+                            data=csv,
+                            file_name=f"traeger_data_{start_date}_{end_date}.csv",
+                            mime="text/csv"
+                        )
+                    else:
+                        st.info("No data found for the selected date range")
+            else:
+                st.warning("Data storage is not available")
         
     elif not st.session_state.connected:
         st.info("Please connect to Traeger services using the sidebar.")

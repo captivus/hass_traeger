@@ -5,6 +5,7 @@ import json
 import logging
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, List, Callable, Dict, Any
 from urllib.parse import urlparse
 
@@ -13,6 +14,7 @@ import paho.mqtt.client as mqtt
 import ssl
 
 from .models import GrillStatus, ProbeData, GrillState, GrillCommand
+from .storage import DataStorage
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +25,7 @@ TIMEOUT = 60
 class TraegerClient:
     """Clean async client for Traeger grills."""
     
-    def __init__(self, username: str, password: str):
+    def __init__(self, username: str, password: str, enable_storage: bool = True, db_path: Optional[str] = None):
         self.username = username
         self.password = password
         
@@ -48,6 +50,12 @@ class TraegerClient:
         
         # Callbacks
         self._status_callbacks: List[Callable[[GrillStatus], None]] = []
+        
+        # Storage
+        self.enable_storage = enable_storage
+        self.storage: Optional[DataStorage] = None
+        if enable_storage:
+            self.storage = DataStorage(Path(db_path) if db_path else None)
         
     async def connect(self):
         """Connect to Traeger services."""
@@ -211,9 +219,18 @@ class TraegerClient:
             grill_id = message.topic.split("/")[-1]
             data = json.loads(message.payload)
             
+            # Save raw message if storage is enabled
+            if self.storage:
+                asyncio.create_task(self._save_raw_message(message.topic, message.payload.decode()))
+            
             # Convert to GrillStatus
             status = self._parse_status(grill_id, data)
             self._grill_status[grill_id] = status
+            
+            # Save to database if storage is enabled
+            if self.storage:
+                grill_state = self._convert_to_grill_state(status)
+                asyncio.create_task(self.storage.save_grill_state(grill_state))
             
             # Notify callbacks
             for callback in self._status_callbacks:
@@ -221,6 +238,13 @@ class TraegerClient:
                 
         except Exception as e:
             logger.error(f"Error processing message: {e}")
+    
+    async def _save_raw_message(self, topic: str, payload: str):
+        """Save raw message to storage."""
+        try:
+            await self.storage.save_raw_message(topic, payload)
+        except Exception as e:
+            logger.error(f"Error saving raw message: {e}")
             
     def _parse_status(self, thing_name: str, data: Dict[str, Any]) -> GrillStatus:
         """Parse raw status data into GrillStatus model."""
@@ -277,6 +301,40 @@ class TraegerClient:
             pellet_level=status_data.get("pellet_level"),
             cook_timer_seconds=status_data.get("cook_timer_remaining"),
             raw_status=data
+        )
+    
+    def _convert_to_grill_state(self, status: GrillStatus) -> GrillState:
+        """Convert GrillStatus to GrillState for database storage."""
+        # Get probe temperature if available
+        probe_temp = None
+        probe_set_temp = None
+        probe_alarm = False
+        if status.probes:
+            # Use first probe data
+            probe = status.probes[0]
+            probe_temp = probe.temperature
+            probe_set_temp = probe.target_temperature
+            probe_alarm = probe.alarm_fired
+        
+        return GrillState(
+            grill_id=status.thing_name,
+            grill_name=status.friendly_name,
+            is_connected=status.connected,
+            firmware_version=None,  # Not available in status
+            ambient_temperature=status.ambient_temperature,
+            grill_temperature=status.grill_temperature,
+            grill_set_temperature=status.grill_set_temperature,
+            probe_temperature=probe_temp,
+            probe_set_temperature=probe_set_temp,
+            probe_alarm_fired=probe_alarm,
+            pellet_level=status.pellet_level,
+            fan_level=status.fan_speed,
+            fan_mode=None,  # Not available in status
+            fire_state=status.state.value if status.state else None,
+            smoke_level=None,  # Not available in status
+            wifi_signal=None,  # Not available in status
+            probes=status.probes,
+            raw_data=status.raw_status
         )
         
     def add_status_callback(self, callback: Callable[[GrillStatus], None]):

@@ -55,90 +55,100 @@ graph TB
 
 The initial setup process involves creating a Traeger client instance, authenticating with AWS Cognito, and discovering the user's grills. This section covers the complete flow from username/password to obtaining the grill's unique identifier (thingName).
 
-### Step 1: Client Initialization (`traeger.py`, lines 34-62)
+### Step 1: Client Initialization (`traeger_client/client.py`, lines 23-51)
 
 ```python
-class Traeger:
-    def __init__(self, username, password, request_library=requests):
+class TraegerClient:
+    """Clean async client for Traeger grills."""
+    
+    def __init__(self, username: str, password: str):
         self.username = username
         self.password = password
-        self.mqtt_uuid = str(uuid.uuid1())
-        self.mqtt_thread_running = False
-        self.mqtt_thread_refreshing = False
-        self.grills = []
-        self.grill_status = {}
-        self.grills_active = False
-        self.loop = asyncio.get_event_loop()
-        self.task = None
-        self.mqtt_url = None
-        self.mqtt_client = None
-        self.grill_status = {}
-        self.access_token = None
-        self.token = None
-        self.refresh_token_value = None  # Initialize here
+        
+        # Authentication
+        self.token: Optional[str] = None
+        self.refresh_token: Optional[str] = None
         self.token_expires = 0
-        self.mqtt_url_expires = time.time()
-        self.request = request_library
-        if request_library == aiohttp.ClientSession:
-            self.session = aiohttp.ClientSession()
-        else:
-            self.session = None
-        self.grill_callbacks = {}
-        self.mqtt_client_inloop = False
-        self.autodisconnect = False
+        
+        # MQTT
+        self.mqtt_url: Optional[str] = None
+        self.mqtt_url_expires = 0
+        self.mqtt_client: Optional[mqtt.Client] = None
+        self._mqtt_connected = False
+        self.mqtt_thread_refreshing = False
+        
+        # Session
+        self.session: Optional[aiohttp.ClientSession] = None
+        
+        # Grills
+        self.grills: List[Dict[str, Any]] = []
+        self._grill_status: Dict[str, GrillStatus] = {}
+        
+        # Callbacks
+        self._status_callbacks: List[Callable[[GrillStatus], None]] = []
 ```
 
 Key initialization parameters:
 - `username`: Traeger account email address
 - `password`: Traeger account password
-- `request_library`: HTTP library to use (requests or aiohttp)
+- Clean async implementation with type hints
 
-### Step 2: Initial Authentication (`traeger.py`, lines 63-64)
+### Step 2: Initial Authentication (`traeger_client/client.py`, lines 52-58)
 
 ```python
-async def initialize(self):
-    await self.do_cognito()
+async def connect(self):
+    """Connect to Traeger services."""
+    self.session = aiohttp.ClientSession()
+    await self._authenticate()
+    await self._discover_grills()
+    await self._connect_mqtt()
 ```
 
-The `initialize()` method is the entry point that triggers the authentication process.
+The `connect()` method is the entry point that:
+1. Creates an aiohttp session
+2. Authenticates with AWS Cognito
+3. Discovers available grills
+4. Establishes MQTT connection
 
-### Step 3: User Data Retrieval (`traeger.py`, lines 139-149)
+### Step 3: User Data Retrieval (`traeger_client/client.py`, lines 128-140)
 
 ```python
-async def get_user_data(self):
-    await self.refresh_token()
-    user_data = await self.api_wrapper(
-        "get",
+async def _discover_grills(self):
+    """Discover available grills."""
+    await self._refresh_auth()
+    
+    headers = {"authorization": self.token}
+    async with self.session.get(
         "https://1ywgyc65d1.execute-api.us-west-2.amazonaws.com/prod/users/self",
-        headers={"authorization": self.token},
-    )
-    if user_data is None:
-        _LOGGER.error("Failed to get user data.")
-    return user_data
+        headers=headers
+    ) as resp:
+        data = await resp.json(content_type=None)
+        
+    self.grills = data.get("things", [])
+    logger.info(f"Discovered {len(self.grills)} grills")
 ```
 
 This method retrieves the user's profile data, including their registered grills.
 
-### Step 4: Grill Discovery (`traeger.py`, lines 186-198)
+### Step 4: Grill Discovery (`traeger_client/client.py`, lines 313-321)
 
 ```python
-async def update_grills(self):
-    json_data = await self.get_user_data()
-    if json_data and "things" in json_data:
-        self.grills = json_data["things"]
-    else:
-        _LOGGER.error("Failed to get grills: %s", json_data)
-        self.grills = []  # Default to an empty list if the response is invalid
-
-async def get_grills(self):
-    await self.update_grills()
-    return self.grills
+def list_grills(self) -> List[Dict[str, str]]:
+    """List available grills."""
+    return [
+        {
+            "thing_name": g["thingName"],
+            "friendly_name": g.get("friendlyName", g["thingName"])
+        }
+        for g in self.grills
+    ]
 ```
 
 The grill discovery process:
-1. Calls the `/users/self` API endpoint
+1. Calls the `/users/self` API endpoint in `_discover_grills()`
 2. Extracts the `things` array from the response
 3. Each "thing" represents a registered grill with its `thingName`
+4. Returns a simplified list with thing_name and friendly_name
 
 ### Example User Data Response:
 
@@ -165,22 +175,20 @@ The grill discovery process:
 
 ### Step 5: Complete Setup Flow
 
-Here's a complete example of the setup flow:
+Here's a complete example of the setup flow (`examples/simple_monitor.py`, lines 22-49):
 
 ```python
 # Create client instance
-traeger = Traeger(username="user@example.com", password="password123")
+client = TraegerClient(username, password)
 
-# Initialize and authenticate
-await traeger.initialize()
+# Connect (authenticate, discover grills, connect MQTT)
+await client.connect()
 
-# Discover grills
-grills = await traeger.get_grills()
-
-# Extract grill identifier
-if grills:
-    grill_id = grills[0]['thingName']  # e.g., "TRAEGER-ABC123XYZ"
-    print(f"Found grill: {grill_id}")
+# List grills
+grills = client.list_grills()
+print(f"\nFound {len(grills)} grills:")
+for grill in grills:
+    print(f"  - {grill['friendly_name']} ({grill['thing_name']})")
 ```
 
 ### Configuration and Environment Variables
@@ -188,8 +196,8 @@ if grills:
 The implementation uses hardcoded values for some configuration:
 
 ```python
-CLIENT_ID = "2fuohjtqv1e63dckp5v84rau0j"  # AWS Cognito App Client ID
-TIMEOUT = 60  # API request timeout in seconds
+CLIENT_ID = "2fuohjtqv1e63dckp5v84rau0j"  # AWS Cognito App Client ID (client.py, line 19)
+TIMEOUT = 60  # API request timeout in seconds (client.py, line 20)
 ```
 
 For production use, these should be externalized to environment variables:
@@ -206,62 +214,68 @@ TRAEGER_PASSWORD = os.getenv("TRAEGER_PASSWORD")
 
 The setup process includes error handling at each step:
 
-1. **Authentication Failure** (`traeger.py`, lines 90-97):
+1. **Authentication Failure** (`traeger_client/client.py`, lines 90-97):
    ```python
-   if response and 'AuthenticationResult' in response:
-       self.token = response['AuthenticationResult']['IdToken']
-       self.refresh_token_value = response['AuthenticationResult'].get('RefreshToken')
-       self.token_expires = time.time() + response['AuthenticationResult']['ExpiresIn']
-       _LOGGER.info('Initial token obtained successfully.')
+   if "AuthenticationResult" in result:
+       auth = result["AuthenticationResult"]
+       self.token = auth["IdToken"]
+       self.refresh_token = auth.get("RefreshToken")
+       self.token_expires = time.time() + auth["ExpiresIn"]
+       logger.info("Authentication successful")
    else:
-       _LOGGER.error("Failed to authenticate with Cognito: %s", response)
-       raise Exception("Initial authentication failed")
+       raise Exception(f"Authentication failed: {result}")
    ```
 
-2. **User Data Retrieval Failure** (`traeger.py`, lines 146-148):
+2. **MQTT Connection Timeout** (`traeger_client/client.py`, lines 184-190):
    ```python
-   if user_data is None:
-       _LOGGER.error("Failed to get user data.")
-   ```
-
-3. **Grill Discovery Failure** (`traeger.py`, lines 189-192):
-   ```python
-   if json_data and "things" in json_data:
-       self.grills = json_data["things"]
+   # Wait for connection
+   for _ in range(10):
+       if self._mqtt_connected:
+           break
+       await asyncio.sleep(1)
    else:
-       _LOGGER.error("Failed to get grills: %s", json_data)
-       self.grills = []  # Default to an empty list
+       raise Exception("MQTT connection timeout")
    ```
 
-### Modern Implementation Comparison (`traeger_newnew.py`)
-
-The newer implementation (`traeger_newnew.py`) includes some improvements:
-
-1. **Session Management** (`traeger_newnew.py`, lines 46-48):
+3. **Grill Discovery** (`traeger_client/client.py`, lines 139-140):
    ```python
-   async def initialize(self):
-       self.session = aiohttp.ClientSession()
-       await self.do_cognito()
+   self.grills = data.get("things", [])
+   logger.info(f"Discovered {len(self.grills)} grills")
    ```
 
-2. **Enhanced Logging** (`traeger_newnew.py`, line 19):
+### Modern Implementation Features
+
+The current implementation in `traeger-stream/traeger_client/` includes these features:
+
+1. **Type Safety with Pydantic Models** (`models.py`, lines 35-80):
    ```python
-   logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(name)s %(levelname)s %(message)s')
+   class GrillStatus(BaseModel):
+       """Complete grill status data."""
+       thing_name: str
+       friendly_name: str
+       connected: bool = False
+       state: GrillState = GrillState.OFFLINE
+       # ... additional fields
    ```
 
-3. **WebSocket URL Validation** (`traeger_newnew.py`, lines 385-398):
+2. **Clean Command Interface** (`models.py`, lines 82-110):
    ```python
-   async def check_websocket_url(self, url):
-       async with aiohttp.ClientSession() as session:
-           try:
-               async with session.get(url) as response:
-                   _LOGGER.debug("Checking WebSocket URL: %s", url)
-                   if response.status == 200:
-                       _LOGGER.debug("WebSocket URL %s is accessible.", url)
-                   else:
-                       _LOGGER.error("WebSocket URL %s is not accessible. Status: %s", url, response.status)
-           except Exception as e:
-               _LOGGER.error("Error checking WebSocket URL %s: %s", url, e)
+   class GrillCommand(BaseModel):
+       """Commands that can be sent to the grill."""
+       thing_name: str
+       command: str
+       
+       @classmethod
+       def set_temperature(cls, thing_name: str, temp: int) -> "GrillCommand":
+           """Create command to set grill temperature."""
+           return cls(thing_name=thing_name, command=f"11,{temp}")
+   ```
+
+3. **Callback-based Status Updates** (`client.py`, lines 280-287):
+   ```python
+   def add_status_callback(self, callback: Callable[[GrillStatus], None]):
+       """Add callback for status updates."""
+       self._status_callbacks.append(callback)
    ```
 
 ### Summary
@@ -282,30 +296,31 @@ The `thingName` is critical as it's used for:
 
 The authentication process involves multiple steps with AWS Cognito:
 
-### Step 1: Initial Authentication (`traeger.py`, lines 69-98)
+### Step 1: Initial Authentication (`traeger_client/client.py`, lines 67-97)
 
 ```python
-async def do_cognito(self):
-    t = datetime.datetime.utcnow()
-    amzdate = t.strftime("%Y%m%dT%H%M%SZ")
-    response = await self.api_wrapper(
-        "post",
+async def _authenticate(self):
+    """Authenticate with AWS Cognito."""
+    data = {
+        "ClientMetadata": {},
+        "AuthParameters": {
+            "PASSWORD": self.password,
+            "USERNAME": self.username,
+        },
+        "AuthFlow": "USER_PASSWORD_AUTH",
+        "ClientId": CLIENT_ID,
+    }
+    headers = {
+        "Content-Type": "application/x-amz-json-1.1",
+        "X-Amz-Target": "AWSCognitoIdentityProviderService.InitiateAuth",
+    }
+    
+    async with self.session.post(
         "https://cognito-idp.us-west-2.amazonaws.com/",
-        data={
-            "ClientMetadata": {},
-            "AuthParameters": {
-                "PASSWORD": self.password,
-                "USERNAME": self.username,
-            },
-            "AuthFlow": "USER_PASSWORD_AUTH",
-            "ClientId": CLIENT_ID,  # "2fuohjtqv1e63dckp5v84rau0j"
-        },
-        headers={
-            "Content-Type": "application/x-amz-json-1.1",
-            "X-Amz-Date": amzdate,
-            "X-Amz-Target": "AWSCognitoIdentityProviderService.InitiateAuth",
-        },
-    )
+        json=data,
+        headers=headers
+    ) as resp:
+        result = await resp.json(content_type=None)
 ```
 
 The authentication flow:
@@ -314,23 +329,30 @@ The authentication flow:
 3. Returns `IdToken`, `RefreshToken`, and expiration time
 4. Token typically expires in 3600 seconds (1 hour)
 
-### Step 2: Token Refresh (`traeger.py`, lines 99-138)
+### Step 2: Token Refresh (`traeger_client/client.py`, lines 99-127)
 
 ```python
-async def refresh_token(self):
-    if self.token_remaining() < 60:  # Refresh if less than 60 seconds remaining
-        if not self.refresh_token_value:
-            _LOGGER.error("Cannot refresh token: REFRESH_TOKEN is missing")
-            return
-
-        url = 'https://cognito-idp.us-west-2.amazonaws.com/'
+async def _refresh_auth(self):
+    """Refresh authentication token if needed."""
+    if time.time() > self.token_expires - 60:
         data = {
-            'ClientId': CLIENT_ID,
-            'AuthFlow': 'REFRESH_TOKEN_AUTH',
-            'AuthParameters': {
-                'REFRESH_TOKEN': self.refresh_token_value
+            "ClientId": CLIENT_ID,
+            "AuthFlow": "REFRESH_TOKEN_AUTH",
+            "AuthParameters": {
+                "REFRESH_TOKEN": self.refresh_token
             }
         }
+        headers = {
+            "Content-Type": "application/x-amz-json-1.1",
+            "X-Amz-Target": "AWSCognitoIdentityProviderService.InitiateAuth"
+        }
+        
+        async with self.session.post(
+            "https://cognito-idp.us-west-2.amazonaws.com/",
+            json=data,
+            headers=headers
+        ) as resp:
+            result = await resp.json(content_type=None)
 ```
 
 The refresh mechanism:
@@ -340,20 +362,24 @@ The refresh mechanism:
 
 ## WebSocket/MQTT Connection Setup
 
-### Step 1: Get MQTT URL (`traeger.py`, lines 210-235)
+### Step 1: Get MQTT URL (`traeger_client/client.py`, lines 142-157)
 
 ```python
-async def refresh_mqtt_url(self):
-    await self.refresh_token()
-    if self.mqtt_url_remaining() < 60:
-        mqtt_request_time = time.time()
-        json = await self.api_wrapper(
-            "post",
+async def _get_mqtt_url(self):
+    """Get MQTT WebSocket URL."""
+    if time.time() > self.mqtt_url_expires - 60:
+        await self._refresh_auth()
+        
+        headers = {"Authorization": self.token}
+        async with self.session.post(
             "https://1ywgyc65d1.execute-api.us-west-2.amazonaws.com/prod/mqtt-connections",
-            headers={"Authorization": self.token},
-        )
-        self.mqtt_url_expires = json["expirationSeconds"] + mqtt_request_time
-        self.mqtt_url = json["signedUrl"]
+            headers=headers
+        ) as resp:
+            data = await resp.json(content_type=None)
+            
+        self.mqtt_url = data["signedUrl"]
+        self.mqtt_url_expires = data["expirationSeconds"] + time.time()
+        logger.info("MQTT URL refreshed")
 ```
 
 The MQTT URL:
@@ -361,16 +387,17 @@ The MQTT URL:
 - Expires after a certain time (usually 24 hours)
 - Contains authentication credentials in the query string
 
-### Step 2: Configure MQTT Client (`traeger.py`, lines 314-376)
+### Step 2: Configure MQTT Client (`traeger_client/client.py`, lines 158-190)
 
 ```python
-async def get_mqtt_client(self):
-    # Create MQTT client with WebSocket transport
-    self.mqtt_client = mqtt.Client(transport="websockets")
+async def _connect_mqtt(self):
+    """Connect to MQTT broker."""
+    await self._get_mqtt_url()
     
-    # Set up callbacks
-    self.mqtt_client.on_connect = self.mqtt_onconnect
-    self.mqtt_client.on_message = self.mqtt_onmessage
+    self.mqtt_client = mqtt.Client(transport="websockets")
+    self.mqtt_client.on_connect = self._on_mqtt_connect
+    self.mqtt_client.on_message = self._on_mqtt_message
+    self.mqtt_client.on_disconnect = self._on_mqtt_disconnect
     
     # Configure TLS
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
@@ -379,24 +406,29 @@ async def get_mqtt_client(self):
     context.load_default_certs()
     self.mqtt_client.tls_set_context(context)
     
-    # Parse WebSocket URL and set options
-    mqtt_parts = urllib.parse.urlparse(self.mqtt_url)
-    headers = {"Host": mqtt_parts.netloc}
-    path = "{}?{}".format(mqtt_parts.path, mqtt_parts.query)
+    # Parse WebSocket URL
+    parts = urlparse(self.mqtt_url)
+    headers = {"Host": parts.netloc}
+    path = f"{parts.path}?{parts.query}"
     self.mqtt_client.ws_set_options(path=path, headers=headers)
     
-    # Connect with retry logic
-    self.mqtt_client.connect(mqtt_parts.netloc, 443, keepalive=300)
+    # Connect
+    self.mqtt_client.connect(parts.netloc, 443, keepalive=300)
+    self.mqtt_client.loop_start()
 ```
 
-### Step 3: Subscribe to Topics (`traeger.py`, lines 379-384)
+### Step 3: Subscribe to Topics (`traeger_client/client.py`, lines 192-201)
 
 ```python
-def mqtt_onconnect(self, client, userdata, flags, rc):
-    _LOGGER.info("Connected with result code %s", rc)
+def _on_mqtt_connect(self, client, userdata, flags, rc):
+    """Handle MQTT connection."""
+    logger.info(f"MQTT connected: {rc}")
+    self._mqtt_connected = True
+    
+    # Subscribe to all grills
     for grill in self.grills:
         topic = f"prod/thing/update/{grill['thingName']}"
-        client.subscribe((topic, 1))
+        client.subscribe(topic)
 ```
 
 MQTT Topics:
@@ -421,16 +453,24 @@ MQTT Topics:
 ### Cloud to Client Flow:
 
 ```python
-# Message handling (traeger.py, lines 401-425)
-def mqtt_onmessage(self, client, userdata, message):
-    if message.topic.startswith("prod/thing/update/"):
-        grill_id = message.topic[len("prod/thing/update/") :]
-        self.grill_status[grill_id] = json.loads(message.payload)
+# Message handling (traeger_client/client.py, lines 207-224)
+def _on_mqtt_message(self, client, userdata, message):
+    """Handle MQTT messages."""
+    try:
+        # Parse grill ID from topic
+        grill_id = message.topic.split("/")[-1]
+        data = json.loads(message.payload)
         
-        # Trigger callbacks for UI updates
-        if grill_id in self.grill_callbacks:
-            for callback in self.grill_callbacks[grill_id]:
-                callback()
+        # Convert to GrillStatus
+        status = self._parse_status(grill_id, data)
+        self._grill_status[grill_id] = status
+        
+        # Notify callbacks
+        for callback in self._status_callbacks:
+            callback(status)
+            
+    except Exception as e:
+        logger.error(f"Error processing message: {e}")
 ```
 
 ### Example Status Message:
@@ -463,22 +503,24 @@ def mqtt_onmessage(self, client, userdata, message):
 
 ## Implementation Details
 
-### Command Sending (`traeger.py`, lines 151-167)
+### Command Sending (`traeger_client/client.py`, lines 289-304)
 
 ```python
-async def send_command(self, thingName, command):
-    await self.refresh_token()
-    await self.api_wrapper(
-        "post_raw",
-        f"https://1ywgyc65d1.execute-api.us-west-2.amazonaws.com/prod/things/{thingName}/commands",
-        data={"command": command},
-        headers={
-            "Authorization": self.token,
-            "Content-Type": "application/json",
-            "Accept-Language": "en-us",
-            "User-Agent": "Traeger/11 CFNetwork/1209 Darwin/20.2.0",
-        },
-    )
+async def send_command(self, command: GrillCommand):
+    """Send command to grill."""
+    await self._refresh_auth()
+    
+    url = f"https://1ywgyc65d1.execute-api.us-west-2.amazonaws.com/prod/things/{command.thing_name}/commands"
+    headers = {
+        "Authorization": self.token,
+        "Content-Type": "application/json",
+    }
+    data = {"command": command.command}
+    
+    async with self.session.post(url, headers=headers, json=data) as resp:
+        if resp.status != 200:
+            text = await resp.text()
+            raise Exception(f"Command failed: {resp.status} - {text}")
 ```
 
 Command Protocol:
@@ -489,88 +531,83 @@ Command Protocol:
   - `"14,{temp}"` - Set probe temperature
   - `"17"` - Shutdown grill
 
-### Thread Management (`traeger.py`, lines 220-252)
+### MQTT Loop Management (`traeger_client/client.py`, line 182)
 
 ```python
-def _mqtt_connect_func(self):
-    """Runs in separate thread to handle MQTT loop"""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    while self.mqtt_thread_running:
-        self.mqtt_client_inloop = True
-        self.mqtt_client.loop_forever()  # Blocking call
-        self.mqtt_client_inloop = False
-        
-        # Wait if URL needs refresh
-        while (self.mqtt_url_remaining() < 60 or self.mqtt_thread_refreshing) and self.mqtt_thread_running:
-            time.sleep(1)
+self.mqtt_client.loop_start()
 ```
 
-The implementation uses a dedicated thread for MQTT to avoid blocking the main async loop.
+The modern implementation uses the paho-mqtt library's built-in `loop_start()` method which:
+- Automatically handles the MQTT event loop in a background thread
+- Simplifies the code significantly
+- Avoids manual thread management complexities
 
-### Modern Streaming Implementation (`traeger-stream/`)
+### Status Parsing Implementation (`traeger_client/client.py`, lines 225-278)
 
-The newer implementation in `traeger-stream/` provides cleaner abstractions:
+The implementation includes detailed status parsing:
 
 ```python
-# traeger_client/client.py, lines 51-65
-async def connect(self):
-    """Connect to Traeger services."""
-    self.session = aiohttp.ClientSession()
-    await self._authenticate()
-    await self._discover_grills()
-    await self._connect_mqtt()
+def _parse_status(self, thing_name: str, data: Dict[str, Any]) -> GrillStatus:
+    """Parse raw status data into GrillStatus model."""
+    status_data = data.get("status", {})
+    
+    # Map state
+    state_map = {
+        0: GrillState.OFFLINE,
+        1: GrillState.IDLE,
+        2: GrillState.STARTUP,
+        3: GrillState.PREHEATING,
+        4: GrillState.IGNITING,
+        5: GrillState.SMOKING,
+        6: GrillState.GRILLING,
+        7: GrillState.COOLING,
+        8: GrillState.SHUTDOWN,
+    }
+    state = state_map.get(status_data.get("system_status", 0), GrillState.ERROR)
 ```
 
-Key improvements:
-- Uses pydantic models for type safety
-- Cleaner separation of concerns
-- Built-in streaming buffer for time-series data
+Key features:
+- Strongly typed data models
+- Comprehensive state mapping
+- Support for multiple temperature probes
 
 ## Error Handling & Reconnection
 
-### WebSocket Handshake Issues (`traeger_newnew.py`, lines 385-398)
+### Connection Monitoring (`traeger_client/client.py`, lines 184-190)
 
 ```python
-async def check_websocket_url(self, url):
-    """Validates WebSocket URL accessibility"""
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.get(url) as response:
-                if response.status == 200:
-                    _LOGGER.debug("WebSocket URL %s is accessible.", url)
-                else:
-                    _LOGGER.error("WebSocket URL %s is not accessible. Status: %s", url, response.status)
-        except Exception as e:
-            _LOGGER.error("Error checking WebSocket URL %s: %s", url, e)
-```
-
-### Reconnection Strategy (`traeger.py`, lines 356-369)
-
-```python
-retry_attempts = 0
-while retry_attempts < 5:
-    try:
-        self.mqtt_client.connect(mqtt_parts.netloc, 443, keepalive=300)
+# Wait for connection
+for _ in range(10):
+    if self._mqtt_connected:
         break
-    except Exception as e:
-        retry_attempts += 1
-        _LOGGER.error(f"Connection Failed: {e}, retrying in {2 ** retry_attempts} seconds...")
-        await asyncio.sleep(2 ** retry_attempts)  # Exponential backoff
+    await asyncio.sleep(1)
+else:
+    raise Exception("MQTT connection timeout")
 ```
 
-### Connection Monitoring (`traeger.py`, lines 467-484)
+The implementation includes a timeout mechanism for MQTT connection establishment.
+
+### Disconnection Handling (`traeger_client/client.py`, lines 202-206)
 
 ```python
-async def main(self):
-    """Main loop that monitors and refreshes connections"""
-    if self.mqtt_url_remaining() < 60:
-        self.mqtt_thread_refreshing = True
-        if self.mqtt_thread_running:
-            self.mqtt_client.disconnect()
-            self.mqtt_client = None
-        await self.get_mqtt_client()
-        self.mqtt_thread_refreshing = False
+def _on_mqtt_disconnect(self, client, userdata, rc):
+    """Handle MQTT disconnection."""
+    logger.warning(f"MQTT disconnected: {rc}")
+    self._mqtt_connected = False
+```
+
+The paho-mqtt library handles automatic reconnection internally when using `loop_start()`.
+
+### Clean Disconnect (`traeger_client/client.py`, lines 59-65)
+
+```python
+async def disconnect(self):
+    """Disconnect from services."""
+    if self.mqtt_client:
+        self.mqtt_client.loop_stop()
+        self.mqtt_client.disconnect()
+    if self.session:
+        await self.session.close()
 ```
 
 ## Debugging Tips
@@ -578,17 +615,25 @@ async def main(self):
 ### 1. Enable Debug Logging
 
 ```python
-# traeger_newnew.py, line 19
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(name)s %(levelname)s %(message)s')
+# In your main script
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
+# Or specifically for the client
+logger = logging.getLogger('traeger_client.client')
+logger.setLevel(logging.DEBUG)
 ```
 
-### 2. Monitor Key Timeouts
+### 2. Use the Example Monitor
+
+The `examples/simple_monitor.py` provides a complete working example:
 
 ```python
-_LOGGER.info(
-    f"Token Time Remaining:{self.token_remaining()} "
-    f"MQTT Time Remaining:{self.mqtt_url_remaining()}"
-)
+# Define callback for status updates
+def on_status_update(status):
+    print(f"\n[{datetime.now().strftime('%H:%M:%S')}] {status.friendly_name}")
+    print(f"  State: {status.state.name}")
+    print(f"  Grill: {status.grill_temperature}°F (set: {status.grill_set_temperature}°F)")
 ```
 
 ### 3. Check WebSocket URL Format
@@ -704,4 +749,12 @@ asyncio.set_event_loop(loop)
 
 ## Conclusion
 
-The Traeger streaming system is a complex integration of AWS services, WebSocket transport, and MQTT messaging. Understanding the authentication flow, connection lifecycle, and error handling patterns is crucial for maintaining a stable connection to the grill. The newer `traeger-stream` implementation provides a cleaner architecture that's easier to debug and extend.
+The Traeger streaming system is a complex integration of AWS services, WebSocket transport, and MQTT messaging. The current implementation in `traeger-stream/traeger_client/` provides:
+
+- Clean async/await patterns throughout
+- Type-safe data models using Pydantic
+- Simplified connection management
+- Callback-based status updates
+- Comprehensive error handling
+
+This architecture makes it easy to integrate with other systems while maintaining a stable connection to the grill.
