@@ -485,6 +485,15 @@ def main():
                 
             # Mark that we're in the live tab
             st.session_state.current_tab = "live"
+            
+            # Auto-refresh container at the bottom
+            # This will trigger a rerun periodically
+            auto_refresh_container = st.empty()
+            with auto_refresh_container:
+                refresh_rate = st.session_state.get('refresh_rate', 2)
+                if refresh_rate > 0:
+                    time.sleep(refresh_rate)
+                    st.rerun()
         
         with tab2:
             # Historical data tab
@@ -597,12 +606,6 @@ def main():
     else:
         st.info("Please select a grill from the sidebar.")
     
-    # Auto-refresh only if on live tab
-    if (st.session_state.connected and 
-        st.session_state.selected_grill and 
-        st.session_state.get('current_tab') == 'live'):
-        time.sleep(st.session_state.get('refresh_rate', 2))
-        st.rerun()
 
 
 if __name__ == "__main__":
