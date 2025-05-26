@@ -30,6 +30,8 @@ class ProbeData(BaseModel):
     alarm_fired: bool = False
     battery_level: Optional[int] = None
     ambient_temp: Optional[float] = None
+    predicted_time_to_target: Optional[float] = None  # Minutes
+    prediction_confidence: Optional[float] = None  # 0-1
 
 
 class GrillStatus(BaseModel):

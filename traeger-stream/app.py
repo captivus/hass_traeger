@@ -204,7 +204,7 @@ def create_temperature_chart(df: pd.DataFrame):
                             name=f"Probe {i+1} Target",
                             line=dict(color=color, dash="dot", width=1),
                             mode="lines",
-                            showlegend=False
+                            showlegend=True
                         )
                     )
         
@@ -379,6 +379,14 @@ def main():
                             f"{probe.temperature or '--'}°F",
                             delta=f"Target: {probe.target_temperature or '--'}°F"
                         )
+                        # Show prediction if available
+                        if probe.predicted_time_to_target is not None:
+                            from traeger_client.temperature_predictor import TemperaturePredictor
+                            predictor = TemperaturePredictor()
+                            prediction_str = predictor.format_prediction(
+                                (probe.predicted_time_to_target, probe.prediction_confidence)
+                            )
+                            st.caption(f"⏱️ {prediction_str}")
                     else:
                         st.metric("Probe 1", "--°F")
                         
@@ -390,6 +398,14 @@ def main():
                             f"{probe.temperature or '--'}°F",
                             delta=f"Target: {probe.target_temperature or '--'}°F"
                         )
+                        # Show prediction if available
+                        if probe.predicted_time_to_target is not None:
+                            from traeger_client.temperature_predictor import TemperaturePredictor
+                            predictor = TemperaturePredictor()
+                            prediction_str = predictor.format_prediction(
+                                (probe.predicted_time_to_target, probe.prediction_confidence)
+                            )
+                            st.caption(f"⏱️ {prediction_str}")
                     else:
                         st.metric("Probe 2", "--°F")
                     

@@ -15,6 +15,7 @@ import ssl
 
 from .models import GrillStatus, ProbeData, GrillState, GrillCommand
 from .storage import DataStorage
+from .temperature_predictor import TemperaturePredictor
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,9 @@ class TraegerClient:
         self.storage: Optional[DataStorage] = None
         if enable_storage:
             self.storage = DataStorage(Path(db_path) if db_path else None)
+            
+        # Temperature predictor
+        self.predictor = TemperaturePredictor()
             
         # Store main event loop for cross-thread operations
         self._main_loop: Optional[asyncio.AbstractEventLoop] = None
@@ -283,18 +287,44 @@ class TraegerClient:
         
         # Parse probes
         probes = []
+        grill_temp = status_data.get("grill", 0)
+        grill_set_temp = status_data.get("set", 0)
+        ambient_temp = status_data.get("ambient", 70)
+        
         for acc in status_data.get("acc", []):
             if acc.get("type") == "btprobe":
                 btprobe_data = acc.get("btprobe", {})
+                current_temp = btprobe_data.get("get_temp")
+                target_temp = btprobe_data.get("set_temp")
+                probe_id = acc["uuid"]
+                
+                # Get prediction if temperatures are available
+                predicted_time = None
+                confidence = None
+                if (current_temp is not None and target_temp is not None and 
+                    current_temp < target_temp):
+                    prediction = self.predictor.predict(
+                        current_temp=current_temp,
+                        target_temp=target_temp,
+                        grill_temp=grill_temp,
+                        grill_set_temp=grill_set_temp,
+                        ambient_temp=ambient_temp,
+                        probe_id=probe_id
+                    )
+                    if prediction:
+                        predicted_time, confidence = prediction
+                
                 probe = ProbeData(
-                    id=acc["uuid"],
+                    id=probe_id,
                     name=acc.get("channel", f"Probe {len(probes) + 1}"),
-                    temperature=btprobe_data.get("get_temp"),
-                    target_temperature=btprobe_data.get("set_temp"),
+                    temperature=current_temp,
+                    target_temperature=target_temp,
                     is_connected=acc.get("con", False) == 1,
                     alarm_fired=btprobe_data.get("alarm_fired", 0) == 1,
                     battery_level=btprobe_data.get("batt"),
-                    ambient_temp=btprobe_data.get("ambient_temp")
+                    ambient_temp=btprobe_data.get("ambient_temp"),
+                    predicted_time_to_target=predicted_time,
+                    prediction_confidence=confidence
                 )
                 probes.append(probe)
                 
