@@ -13,19 +13,23 @@ from traeger_client.models import GrillCommand
 class StreamBuffer:
     """Circular buffer for time-series data."""
     
-    def __init__(self, max_duration: timedelta = timedelta(hours=2)):
+    def __init__(self, max_duration: timedelta = timedelta(hours=48)):
         self.max_duration = max_duration
         self.data: Deque[Tuple[datetime, GrillStatus]] = deque()
+        self._last_historical_timestamp: Optional[datetime] = None
         
     def add(self, status: GrillStatus):
         """Add new status to buffer."""
         now = datetime.now()
-        self.data.append((now, status))
         
-        # Remove old data
-        cutoff = now - self.max_duration
-        while self.data and self.data[0][0] < cutoff:
-            self.data.popleft()
+        # Skip duplicates
+        if not self.is_duplicate(now, status):
+            self.data.append((now, status))
+            
+            # Remove old data
+            cutoff = now - self.max_duration
+            while self.data and self.data[0][0] < cutoff:
+                self.data.popleft()
             
     def get_dataframe(self, thing_name: str) -> pd.DataFrame:
         """Get data as pandas DataFrame for plotting."""
@@ -64,6 +68,48 @@ class StreamBuffer:
     def clear(self):
         """Clear all data."""
         self.data.clear()
+        self._last_historical_timestamp = None
+    
+    def load_historical_data(self, historical_data: List[Tuple[datetime, GrillStatus]]):
+        """Load historical data into buffer.
+        
+        Args:
+            historical_data: List of (timestamp, GrillStatus) tuples sorted by timestamp
+        """
+        # Clear existing data
+        self.data.clear()
+        
+        # Add historical data
+        now = datetime.now()
+        cutoff = now - self.max_duration
+        
+        for timestamp, status in historical_data:
+            # Only add data within our time window
+            if timestamp >= cutoff:
+                self.data.append((timestamp, status))
+                self._last_historical_timestamp = timestamp
+        
+        # Ensure data is sorted by timestamp
+        self.data = deque(sorted(self.data, key=lambda x: x[0]))
+    
+    def is_duplicate(self, timestamp: datetime, status: GrillStatus) -> bool:
+        """Check if this data point would be a duplicate.
+        
+        Returns True if we already have data for this grill at this timestamp.
+        """
+        # If we have historical data, ignore live updates until we pass the last historical timestamp
+        if self._last_historical_timestamp and timestamp <= self._last_historical_timestamp:
+            return True
+            
+        # Check for exact duplicates in recent data (within 2 seconds)
+        for ts, existing_status in reversed(self.data):
+            if existing_status.thing_name == status.thing_name:
+                time_diff = abs((timestamp - ts).total_seconds())
+                if time_diff < 2:  # Within 2 seconds
+                    return True
+                break  # Only check the most recent entry for this grill
+        
+        return False
 
 
 class DataStream:

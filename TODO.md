@@ -1,7 +1,7 @@
 # TODO
-* Data needs to be converted to my timezone
-* Historical data is only saving 9 records, but it's been running for 10 mins so should have many more.
+* Do the refresh rate and data window sliders actually work?
 * Confirm that the set temps buttons actually work
+* Remove "shutdown grill" button and command -- we never want to do this from our app
 * Add the probe temp control for the second probe
 * Move this whole thing out of Streamlit ... it's kind of awful
 * We really need a service that will run and collect all of the streamed data from the grill and save it

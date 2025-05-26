@@ -4,7 +4,7 @@ import asyncio
 import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import pandas as pd
 from dotenv import load_dotenv
 import os
@@ -27,6 +27,10 @@ logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
+
+# Timezone configuration - default to system timezone
+# Can be overridden with TIMEZONE env var (e.g., 'America/Chicago', 'US/Eastern', 'UTC')
+TIMEZONE = os.getenv('TIMEZONE', 'America/Chicago')
 
 # Helper to run async functions in Streamlit
 def run_async(coro):
@@ -51,6 +55,8 @@ if "connected" not in st.session_state:
     st.session_state.connected = False
 if "selected_grill" not in st.session_state:
     st.session_state.selected_grill = None
+if "historical_loaded" not in st.session_state:
+    st.session_state.historical_loaded = False
 
 
 async def connect_to_traeger():
@@ -79,6 +85,69 @@ async def connect_to_traeger():
     except Exception as e:
         st.error(f"Connection failed: {e}")
         return False
+
+
+async def load_historical_data_to_buffer(storage, stream, thing_name: str, hours: int = 24):
+    """Load historical data into the stream buffer.
+    
+    Args:
+        storage: DataStorage instance
+        stream: DataStream instance  
+        thing_name: Grill thing name
+        hours: Number of hours of historical data to load
+    """
+    if not storage or not stream:
+        return
+        
+    # Calculate time range
+    end_time = datetime.now()
+    start_time = end_time - timedelta(hours=hours)
+    
+    # Fetch raw messages from database
+    raw_messages = await storage.get_raw_messages(
+        start_time=start_time,
+        end_time=end_time
+    )
+    
+    if not raw_messages:
+        return
+    
+    # Parse messages and convert to GrillStatus objects
+    historical_data = []
+    
+    for msg in raw_messages:
+        try:
+            # Parse payload
+            payload = json.loads(msg['payload'])
+            
+            # Extract thing name from topic or payload
+            # Topic format: prod/thing/update/THINGNAME
+            topic_parts = msg['topic'].split('/')
+            msg_thing_name = None
+            if len(topic_parts) >= 4:
+                msg_thing_name = topic_parts[3]
+            
+            # Skip if not for our grill
+            if msg_thing_name != thing_name:
+                continue
+                
+            # Parse into GrillStatus using client's parser
+            if st.session_state.client:
+                status = st.session_state.client._parse_status(msg_thing_name, payload)
+                
+                # Convert timestamp to local timezone
+                timestamp = pd.to_datetime(msg['timestamp']).tz_localize('UTC').tz_convert(TIMEZONE)
+                timestamp = timestamp.to_pydatetime().replace(tzinfo=None)  # Make timezone-naive for consistency
+                
+                historical_data.append((timestamp, status))
+        except Exception as e:
+            logger.error(f"Error parsing historical message: {e}")
+            continue
+    
+    # Load into buffer
+    if historical_data:
+        stream.buffer.load_historical_data(historical_data)
+        logger.info(f"Loaded {len(historical_data)} historical data points for {thing_name}")
 
 
 def create_temperature_chart(df: pd.DataFrame):
@@ -213,14 +282,33 @@ def main():
                         range(len(grills)),
                         format_func=lambda x: grill_names[x]
                     )
-                    st.session_state.selected_grill = grills[selected_idx]["thing_name"]
+                    new_grill = grills[selected_idx]["thing_name"]
+                    if st.session_state.selected_grill != new_grill:
+                        st.session_state.selected_grill = new_grill
+                        st.session_state.historical_loaded = False
                     
             # Refresh interval
             refresh_rate = st.slider("Refresh Rate (seconds)", 1, 10, 2)
             st.session_state.refresh_rate = refresh_rate
             
-            # Data window
-            window_hours = st.slider("Data Window (hours)", 1, 12, 2)
+            # Historical data period for live view
+            st.divider()
+            st.subheader("Live View Settings")
+            historical_hours = st.selectbox(
+                "Historical Data to Load",
+                options=[1, 6, 12, 24, 48],
+                index=3,  # Default to 24 hours
+                format_func=lambda x: f"Last {x} hours",
+                help="Amount of historical data to load when starting live view"
+            )
+            st.session_state.historical_hours = historical_hours
+            
+            # Clear buffer button to reload with new settings
+            if st.button("Reload Historical Data", type="secondary"):
+                if st.session_state.stream:
+                    st.session_state.stream.buffer.clear()
+                    st.session_state.historical_loaded = False
+                st.rerun()
             
             # Data Storage
             st.divider()
@@ -243,11 +331,15 @@ def main():
                     # Get latest raw message
                     raw_messages = run_async(storage.get_raw_messages(limit=1))
                     if raw_messages:
-                        st.caption(f"Latest data: {raw_messages[0]['timestamp']}")
+                        # Convert UTC timestamp to local time
+                        utc_time = pd.to_datetime(raw_messages[0]['timestamp']).tz_localize('UTC')
+                        local_time = utc_time.tz_convert(TIMEZONE)
+                        st.caption(f"Latest data: {local_time.strftime('%Y-%m-%d %H:%M:%S %Z')}")
                     
                     # Count all raw messages
                     all_messages = run_async(storage.get_raw_messages())
                     st.caption(f"Records: {len(all_messages)} data points")
+                    st.caption(f"Timezone: {TIMEZONE}")
             else:
                 st.warning("Data storage is disabled")
             
@@ -263,8 +355,25 @@ def main():
         tab1, tab2 = st.tabs(["📊 Live Monitor", "📈 Historical Data"])
         
         with tab1:
-            # Get current status
+            # Store current tab for auto-refresh logic
+            st.session_state.current_tab = 'live'
+            
+            # Load historical data if buffer is empty
             buffer = st.session_state.stream.get_buffer()
+            
+            # Check if we need to load historical data
+            if not st.session_state.historical_loaded and st.session_state.client and st.session_state.client.storage:
+                with st.spinner("Loading historical data..."):
+                    run_async(load_historical_data_to_buffer(
+                        st.session_state.client.storage,
+                        st.session_state.stream,
+                        st.session_state.selected_grill,
+                        hours=st.session_state.get('historical_hours', 24)
+                    ))
+                    st.session_state.historical_loaded = True
+                    st.rerun()
+            
+            # Get current status
             current = buffer.get_latest(st.session_state.selected_grill)
             
             if current:
@@ -308,10 +417,15 @@ def main():
                 
                 # Get data for plotting
                 df = buffer.get_dataframe(st.session_state.selected_grill)
-                if not df.empty:
-                    # Filter to selected window
-                    cutoff = datetime.now() - timedelta(hours=window_hours)
-                    df = df[df["timestamp"] > cutoff]
+                
+                # Debug info
+                with st.expander("Debug Info"):
+                    st.write(f"Buffer has {len(buffer.data)} total entries")
+                    st.write(f"DataFrame has {len(df)} rows for {st.session_state.selected_grill}")
+                    if not df.empty:
+                        st.write(f"Time range: {df['timestamp'].min()} to {df['timestamp'].max()}")
+                        st.write("First few rows:")
+                        st.dataframe(df.head())
                     
                 fig = create_temperature_chart(df)
                 st.plotly_chart(fig, use_container_width=True)
@@ -433,7 +547,8 @@ def main():
                         if records:
                             # Convert to DataFrame
                             df = pd.DataFrame(records)
-                            df['timestamp'] = pd.to_datetime(df['timestamp'])
+                            # Convert UTC timestamps to local time
+                            df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_localize('UTC').dt.tz_convert(TIMEZONE)
                             df = df.sort_values('timestamp')
                             
                             # Create historical chart
