@@ -4,10 +4,13 @@ import asyncio
 from collections import deque
 from datetime import datetime, timedelta
 from typing import Optional, Deque, List, Tuple
+import logging
 import pandas as pd
 
 from traeger_client import TraegerClient, GrillStatus
 from traeger_client.models import GrillCommand
+
+logger = logging.getLogger(__name__)
 
 
 class StreamBuffer:
@@ -25,11 +28,18 @@ class StreamBuffer:
         # Skip duplicates
         if not self.is_duplicate(now, status):
             self.data.append((now, status))
+            logger.info(f"Added new data point for {status.thing_name} at {now}")
+            
+            # Keep data sorted by timestamp if we have historical data
+            if self._last_historical_timestamp:
+                self.data = deque(sorted(self.data, key=lambda x: x[0]))
             
             # Remove old data
             cutoff = now - self.max_duration
             while self.data and self.data[0][0] < cutoff:
                 self.data.popleft()
+        else:
+            logger.debug(f"Skipped duplicate data for {status.thing_name} at {now}")
             
     def get_dataframe(self, thing_name: str) -> pd.DataFrame:
         """Get data as pandas DataFrame for plotting."""
@@ -97,10 +107,6 @@ class StreamBuffer:
         
         Returns True if we already have data for this grill at this timestamp.
         """
-        # If we have historical data, ignore live updates until we pass the last historical timestamp
-        if self._last_historical_timestamp and timestamp <= self._last_historical_timestamp:
-            return True
-            
         # Check for exact duplicates in recent data (within 2 seconds)
         for ts, existing_status in reversed(self.data):
             if existing_status.thing_name == status.thing_name:
