@@ -1,38 +1,40 @@
 # Traeger Stream
 
-A clean, Python-native library for streaming live data from Traeger grills with real-time web visualization.
+## TODO
+* Write a great readme & mesh it with [this one](traeger-stream/README.md)
+* Incorporate the [streaming walkthrough](traeger-stream/TRAEGER_STREAMING_WALKTHROUGH.md)
 
-## Features
+### Temperature predictor design (MIW)
+ Temperature Predictor Design
 
-- 🔥 **Real-time Data Streaming** - Get live updates from your Traeger grill via MQTT WebSocket
-- 📊 **Interactive Web Dashboard** - Beautiful Streamlit interface with Plotly charts
-- 🌡️ **Multi-Probe Support** - Monitor grill and up to 4 probe temperatures
-- 📱 **Mobile Friendly** - Responsive design works on any device
-- 💾 **Data Export** - Export cook data for analysis
-- 🎯 **Type-Safe** - Pydantic models for all data structures
+  Inputs
 
-## Quick Start
+  1. Temperature readings: Array of (temperature, timestamp) pairs - minimum 3 points
+  2. Target temperature: The desired final temperature
 
-See the [traeger-stream](./traeger-stream) directory for the main application.
+  Processing
 
-```bash
-cd traeger-stream
-uv sync
-cp .env.example .env
-# Edit .env with your Traeger credentials
+  1. First derivative: Calculate rate of change using ALL input data points
+  2. Second derivative: Calculate acceleration using ALL input data points
+  3. Nonlinear extrapolation: Use a quadratic model that incorporates both derivatives to handle acceleration AND deceleration
 
-# Run the web dashboard
-uv run streamlit run app.py
-```
+  Extrapolation Method
 
-## Documentation
+  - Use kinematic-style equations that account for changing rates
+  - Something like: position = initial_position + velocity*time + 0.5*acceleration*time²
+  - Adapted for temperature: solve for time when temperature reaches target
 
-Full documentation is available in the [traeger-stream README](./traeger-stream/README.md).
+  Output
 
-## License
+  - Predicted time to reach target temperature
 
-This project is licensed under the GNU General Public License v2.0 - see the [LICENSE](LICENSE) file for details.
+  What we're NOT handling (for now)
 
-## Acknowledgments
+  - Decreasing temperatures (just calculate and report)
+  - Stalls (just calculate and report)
+  - No special filtering or smoothing
+  - No confidence intervals
+  - No physical constraints
 
-Originally forked from [sebirdman/hass_traeger](https://github.com/sebirdman/hass_traeger)
+  The key insight is that we need the second derivative because temperature changes are rarely linear - they typically accelerate early
+  then decelerate as they approach the target.
