@@ -1,27 +1,38 @@
-# Traeger Python Library
+# Traeger Stream
 
-Create proper documentation here ...
+A clean, Python-native library for streaming live data from Traeger grills with real-time web visualization.
 
-Document all of the code and refactor for reuse and readability ...
+## Features
 
-# Graphite
+- 🔥 **Real-time Data Streaming** - Get live updates from your Traeger grill via MQTT WebSocket
+- 📊 **Interactive Web Dashboard** - Beautiful Streamlit interface with Plotly charts
+- 🌡️ **Multi-Probe Support** - Monitor grill and up to 4 probe temperatures
+- 📱 **Mobile Friendly** - Responsive design works on any device
+- 💾 **Data Export** - Export cook data for analysis
+- 🎯 **Type-Safe** - Pydantic models for all data structures
 
-[Overview here.](https://graphiteapp.org/#overview)
+## Quick Start
 
-Getting "metrics" (data) into Graphite [here](https://graphiteapp.org/quick-start-guides/feeding-metrics.html).
+See the [traeger-stream](./traeger-stream) directory for the main application.
 
-Using the "Composer" (web UI) [here](https://graphiteapp.org/quick-start-guides/graphing-metrics.html).
+```bash
+cd traeger-stream
+uv sync
+cp .env.example .env
+# Edit .env with your Traeger credentials
 
-You still don't seem to have any graphable data turning up.  NB -- when you were writing this and last playing with it, the grill was off.  Still, it did seem to be returning a bunch of data (though all zeros?).
+# Run the web dashboard
+uv run streamlit run app.py
+```
 
-## Render API
-You can hit the /render API to explore metrics data.  For example, here is the fan usage data sent to Graphite in the past 2 hours:
+## Documentation
 
-http://localhost/render?target=traeger.E8EB1B4C1502.usage.fan&format=json&from=-2h&until=now
+Full documentation is available in the [traeger-stream README](./traeger-stream/README.md).
 
-It seems that all of my values are `null`, so there's something wrong with the way that these metrics are being sent.
+## License
 
-Looking further, it seems that there is not data being sent for these intervals, as Graphite won't allow you to store a null value.
+This project is licensed under the GNU General Public License v2.0 - see the [LICENSE](LICENSE) file for details.
 
-NEVER MIND!  It seems that it's working just fine!
-![Graphite Composer screenshot of lat & long](image.png)
+## Acknowledgments
+
+Originally forked from [sebirdman/hass_traeger](https://github.com/sebirdman/hass_traeger)
