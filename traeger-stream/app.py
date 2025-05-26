@@ -152,13 +152,7 @@ async def load_historical_data_to_buffer(storage, stream, thing_name: str, hours
 
 def create_temperature_chart(df: pd.DataFrame):
     """Create temperature chart with Plotly."""
-    fig = make_subplots(
-        rows=2, cols=1,
-        row_heights=[0.7, 0.3],
-        shared_xaxes=True,
-        vertical_spacing=0.05,
-        subplot_titles=("Temperature", "Fan Speed")
-    )
+    fig = go.Figure()
     
     # Temperature traces
     if not df.empty:
@@ -170,8 +164,7 @@ def create_temperature_chart(df: pd.DataFrame):
                 name="Grill Temp",
                 line=dict(color="red", width=3),
                 mode="lines"
-            ),
-            row=1, col=1
+            )
         )
         
         # Set temperature
@@ -183,8 +176,7 @@ def create_temperature_chart(df: pd.DataFrame):
                     name="Set Temp",
                     line=dict(color="orange", dash="dash", width=2),
                     mode="lines"
-                ),
-                row=1, col=1
+                )
             )
         
         # Probe temperatures
@@ -199,8 +191,7 @@ def create_temperature_chart(df: pd.DataFrame):
                         name=f"Probe {i+1}",
                         line=dict(color=color, width=2),
                         mode="lines"
-                    ),
-                    row=1, col=1
+                    )
                 )
                 
                 # Probe target
@@ -214,38 +205,23 @@ def create_temperature_chart(df: pd.DataFrame):
                             line=dict(color=color, dash="dot", width=1),
                             mode="lines",
                             showlegend=False
-                        ),
-                        row=1, col=1
+                        )
                     )
         
-        # Fan speed
-        if "fan_speed" in df.columns:
-            fig.add_trace(
-                go.Scatter(
-                    x=df["timestamp"],
-                    y=df["fan_speed"],
-                    name="Fan Speed",
-                    line=dict(color="cyan", width=2),
-                    fill="tozeroy",
-                    mode="lines"
-                ),
-                row=2, col=1
-            )
     
     # Update layout
-    fig.update_xaxes(title_text="Time", row=2, col=1)
-    fig.update_yaxes(title_text="Temperature (°F)", row=1, col=1)
-    fig.update_yaxes(title_text="Fan %", range=[0, 10], row=2, col=1)
+    fig.update_xaxes(title_text="Time")
+    fig.update_yaxes(title_text="Temperature (°F)")
     
     fig.update_layout(
         height=600,
         showlegend=True,
         legend=dict(
             orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
+            yanchor="top",
+            y=0.99,
+            xanchor="left",
+            x=0.01
         ),
         margin=dict(l=0, r=0, t=30, b=0)
     )
@@ -396,7 +372,7 @@ def main():
                     )
                     
                 with col3:
-                    if current.probes:
+                    if current.probes and len(current.probes) > 0:
                         probe = current.probes[0]
                         st.metric(
                             "Probe 1",
@@ -407,10 +383,15 @@ def main():
                         st.metric("Probe 1", "--°F")
                         
                 with col4:
-                    st.metric(
-                        "Fan Speed",
-                        f"{current.fan_speed or 0}%"
-                    )
+                    if current.probes and len(current.probes) > 1:
+                        probe = current.probes[1]
+                        st.metric(
+                            "Probe 2",
+                            f"{probe.temperature or '--'}°F",
+                            delta=f"Target: {probe.target_temperature or '--'}°F"
+                        )
+                    else:
+                        st.metric("Probe 2", "--°F")
                     
                 # Temperature chart
                 st.subheader("Temperature History")
