@@ -13,7 +13,7 @@ import aiohttp
 import paho.mqtt.client as mqtt
 import ssl
 
-from .models import GrillStatus, ProbeData, GrillState, GrillCommand, GrillStateData
+from .models import GrillStatus, ProbeData, GrillState, GrillCommand
 from .storage import DataStorage
 
 logger = logging.getLogger(__name__)
@@ -239,12 +239,6 @@ class TraegerClient:
                         self._main_loop
                     )
                     
-                    # Save grill state
-                    grill_state = self._convert_to_grill_state(status)
-                    asyncio.run_coroutine_threadsafe(
-                        self.storage.save_grill_state(grill_state),
-                        self._main_loop
-                    )
                 except Exception as e:
                     logger.error(f"Error saving to database: {e}")
             
@@ -319,40 +313,6 @@ class TraegerClient:
             raw_status=data
         )
     
-    def _convert_to_grill_state(self, status: GrillStatus) -> GrillStateData:
-        """Convert GrillStatus to GrillState for database storage."""
-        # Get probe temperature if available
-        probe_temp = None
-        probe_set_temp = None
-        probe_alarm = False
-        if status.probes:
-            # Use first probe data
-            probe = status.probes[0]
-            probe_temp = probe.temperature
-            probe_set_temp = probe.target_temperature
-            probe_alarm = probe.alarm_fired
-        
-        return GrillStateData(
-            grill_id=status.thing_name,
-            grill_name=status.friendly_name,
-            is_connected=status.connected,
-            firmware_version=None,  # Not available in status
-            ambient_temperature=status.ambient_temperature,
-            grill_temperature=status.grill_temperature,
-            grill_set_temperature=status.grill_set_temperature,
-            probe_temperature=probe_temp,
-            probe_set_temperature=probe_set_temp,
-            probe_alarm_fired=probe_alarm,
-            pellet_level=status.pellet_level,
-            fan_level=status.fan_speed,
-            fan_mode=None,  # Not available in status
-            fire_state=status.state.name if status.state else None,
-            smoke_level=None,  # Not available in status
-            wifi_signal=None,  # Not available in status
-            probes=status.probes,
-            raw_data=status.raw_status
-        )
-        
     def add_status_callback(self, callback: Callable[[GrillStatus], None]):
         """Add callback for status updates."""
         self._status_callbacks.append(callback)

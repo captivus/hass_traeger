@@ -10,11 +10,11 @@ from dotenv import load_dotenv
 import os
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor
+import json
 import nest_asyncio
 
-from traeger_client import TraegerClient, DataStorage
-from traeger_client.models import GrillCommand, GrillState
+from traeger_client import TraegerClient
+from traeger_client.models import GrillCommand
 from streaming import DataStream
 from pathlib import Path
 
@@ -240,14 +240,14 @@ def main():
                 
                 # Show storage stats
                 if st.session_state.selected_grill:
-                    latest = run_async(storage.get_latest_state(st.session_state.selected_grill))
-                    if latest:
-                        st.caption(f"Latest data: {latest['timestamp']}")
+                    # Get latest raw message
+                    raw_messages = run_async(storage.get_raw_messages(limit=1))
+                    if raw_messages:
+                        st.caption(f"Latest data: {raw_messages[0]['timestamp']}")
                     
-                    # Count records
-                    grill_states = run_async(storage.get_grill_states(grill_id=st.session_state.selected_grill))
-                    probe_data = run_async(storage.get_probe_data(grill_id=st.session_state.selected_grill))
-                    st.caption(f"Records: {len(grill_states)} grill states, {len(probe_data)} probe readings")
+                    # Count all raw messages
+                    all_messages = run_async(storage.get_raw_messages())
+                    st.caption(f"Records: {len(all_messages)} data points")
             else:
                 st.warning("Data storage is disabled")
             
@@ -392,84 +392,86 @@ def main():
                     start_datetime = datetime.combine(start_date, datetime.min.time())
                     end_datetime = datetime.combine(end_date, datetime.max.time())
                     
-                    # Load data from database
-                    grill_states = run_async(storage.get_grill_states(
-                        grill_id=st.session_state.selected_grill,
+                    # Load raw messages from database
+                    raw_messages = run_async(storage.get_raw_messages(
                         start_time=start_datetime,
                         end_time=end_datetime
                     ))
                     
-                    if grill_states:
-                        # Convert to DataFrame
-                        df = pd.DataFrame(grill_states)
-                        df['timestamp'] = pd.to_datetime(df['timestamp'])
-                        df = df.sort_values('timestamp')
+                    if raw_messages:
+                        # Parse raw messages to extract data
+                        records = []
+                        for msg in raw_messages:
+                            try:
+                                payload = json.loads(msg['payload'])
+                                status = payload.get('status', {})
+                                
+                                # Extract basic data
+                                record = {
+                                    'timestamp': msg['timestamp'],
+                                    'grill_temp': status.get('grill'),
+                                    'grill_set': status.get('set'),
+                                    'ambient': status.get('ambient'),
+                                    'fan_speed': status.get('fan', 0) if status.get('fan') else 0,
+                                    'connected': status.get('connected', False)
+                                }
+                                
+                                # Extract probe data
+                                probe_idx = 0
+                                for acc in status.get('acc', []):
+                                    if acc.get('type') == 'btprobe' and acc.get('con') == 1:
+                                        btprobe = acc.get('btprobe', {})
+                                        record[f'probe_{probe_idx}_temp'] = btprobe.get('get_temp')
+                                        record[f'probe_{probe_idx}_target'] = btprobe.get('set_temp')
+                                        probe_idx += 1
+                                
+                                records.append(record)
+                            except Exception as e:
+                                st.warning(f"Error parsing message: {e}")
+                                continue
                         
-                        # Rename columns to match expected format
-                        df = df.rename(columns={
-                            'grill_temperature': 'grill_temp',
-                            'grill_set_temperature': 'grill_set',  # Changed from 'set_temp'
-                            'probe_temperature': 'probe_0_temp',   # Changed to match probe naming
-                            'probe_set_temperature': 'probe_0_target',
-                            'fan_level': 'fan_speed'
-                        })
-                        
-                        # Also get probe data from the probe_data table
-                        probe_data = run_async(storage.get_probe_data(
-                            grill_id=st.session_state.selected_grill,
-                            start_time=start_datetime,
-                            end_time=end_datetime
-                        ))
-                        
-                        if probe_data:
-                            # Group probe data by timestamp and probe name
-                            probe_df = pd.DataFrame(probe_data)
-                            probe_df['timestamp'] = pd.to_datetime(probe_df['timestamp'])
+                        if records:
+                            # Convert to DataFrame
+                            df = pd.DataFrame(records)
+                            df['timestamp'] = pd.to_datetime(df['timestamp'])
+                            df = df.sort_values('timestamp')
                             
-                            # Pivot probe data to get separate columns for each probe
-                            for i, probe_name in enumerate(['BT0', 'BT1', 'BT2', 'BT3']):
-                                probe_subset = probe_df[probe_df['probe_name'] == probe_name]
-                                if not probe_subset.empty:
-                                    # Merge probe data with main dataframe
-                                    probe_subset = probe_subset.rename(columns={
-                                        'temperature': f'probe_{i}_temp',
-                                        'target_temperature': f'probe_{i}_target'
-                                    })
-                                    # Select only the columns we need
-                                    probe_subset = probe_subset[['timestamp', f'probe_{i}_temp', f'probe_{i}_target']]
-                                    # Merge on timestamp
-                                    df = pd.merge(df, probe_subset, on='timestamp', how='outer', suffixes=('', '_y'))
-                                    # Drop duplicate columns
-                                    df = df.loc[:, ~df.columns.str.endswith('_y')]
-                        
-                        # Sort by timestamp after merging
-                        df = df.sort_values('timestamp')
-                        
-                        # Create historical chart
-                        fig = create_temperature_chart(df)
-                        st.plotly_chart(fig, use_container_width=True)
-                        
-                        # Show statistics
-                        st.subheader("Statistics")
-                        col1, col2, col3, col4 = st.columns(4)
-                        
-                        with col1:
-                            st.metric("Records", len(df))
-                        with col2:
-                            st.metric("Avg Grill Temp", f"{df['grill_temp'].mean():.1f}°F")
-                        with col3:
-                            st.metric("Max Grill Temp", f"{df['grill_temp'].max():.1f}°F")
-                        with col4:
-                            st.metric("Min Grill Temp", f"{df['grill_temp'].min():.1f}°F")
-                        
-                        # Download data
-                        csv = df.to_csv(index=False)
-                        st.download_button(
-                            label="Download CSV",
-                            data=csv,
-                            file_name=f"traeger_data_{start_date}_{end_date}.csv",
-                            mime="text/csv"
-                        )
+                            # Create historical chart
+                            fig = create_temperature_chart(df)
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                            # Show statistics
+                            st.subheader("Statistics")
+                            col1, col2, col3, col4 = st.columns(4)
+                            
+                            with col1:
+                                st.metric("Records", len(df))
+                            with col2:
+                                if 'grill_temp' in df.columns and not df['grill_temp'].isna().all():
+                                    st.metric("Avg Grill Temp", f"{df['grill_temp'].mean():.1f}°F")
+                                else:
+                                    st.metric("Avg Grill Temp", "--")
+                            with col3:
+                                if 'grill_temp' in df.columns and not df['grill_temp'].isna().all():
+                                    st.metric("Max Grill Temp", f"{df['grill_temp'].max():.1f}°F")
+                                else:
+                                    st.metric("Max Grill Temp", "--")
+                            with col4:
+                                if 'grill_temp' in df.columns and not df['grill_temp'].isna().all():
+                                    st.metric("Min Grill Temp", f"{df['grill_temp'].min():.1f}°F")
+                                else:
+                                    st.metric("Min Grill Temp", "--")
+                            
+                            # Download data
+                            csv = df.to_csv(index=False)
+                            st.download_button(
+                                label="Download CSV",
+                                data=csv,
+                                file_name=f"traeger_data_{start_date}_{end_date}.csv",
+                                mime="text/csv"
+                            )
+                        else:
+                            st.info("No valid data found in the selected date range")
                     else:
                         st.info("No data found for the selected date range")
             else:
