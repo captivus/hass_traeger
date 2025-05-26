@@ -75,6 +75,49 @@ The app includes intelligent temperature prediction that estimates time to reach
 - **Confidence indicators** - Shows prediction confidence based on available data
 - **Real-time updates** - Predictions improve as more temperature data is collected
 
+### How the Physics-Based Model Works
+
+The physics-based predictor provides immediate, reasonable predictions without requiring training data:
+
+1. **Temperature History Tracking**
+   - Maintains a rolling 5-minute history of temperature readings for each probe
+   - Calculates instantaneous heating rate from the last 60 seconds
+   - Tracks temperature acceleration to detect changes in heating rate
+
+2. **Smart Heating Rate Analysis**
+   - Calculates current heating rate in °F/minute when sufficient data exists
+   - Uses weighted averaging to smooth out temperature fluctuations
+   - Detects and adapts to temperature stalls
+
+3. **Non-Linear Heating Compensation**
+   - Recognizes that food heats faster when cold and slower near target
+   - Calculates cooking progress: `(current_temp - ambient) / (target_temp - ambient)`
+   - Applies 1.3x multiplier for the final 30% of cooking (progress > 0.7)
+
+4. **Grill State Awareness**
+   - Only makes predictions when grill is at operating temperature (≥90% of set temp)
+   - Prevents unreliable predictions during startup or temperature changes
+   - Adjusts for temperature differential between grill and food
+
+5. **Empirical Fallback Estimates**
+   - Base heating rate: 3°F/minute (typical for proteins at 250°F)
+   - Adjusts based on: `base_rate * (0.5 + (grill_temp - food_temp)/100 * 0.5)`
+   - Provides estimates even with limited temperature history
+
+6. **Confidence-Based Display**
+   - High confidence (>0.7): Shows as "~15 minutes"
+   - Low confidence (<0.7): Shows as "~15 minutes (estimate)"
+   - No prediction when grill is heating up or data is insufficient
+
+### Physics Principles Applied
+
+The model incorporates several heat transfer principles:
+
+- **Newton's Law of Cooling/Heating**: Rate of temperature change proportional to temperature difference
+- **Thermal Mass Effects**: Larger/denser foods heat more slowly
+- **Boundary Layer Phenomena**: Accounts for evaporative cooling ("the stall")
+- **Asymptotic Temperature Approach**: Heating slows as food nears grill ambient temperature
+
 ### Training Custom Models
 
 Once you have sufficient cooking data, you can train a custom ML model:
@@ -197,5 +240,5 @@ This project is licensed under the GNU General Public License v2.0 - see the LIC
 
 ## Acknowledgments
 
-- Based on the original [hass-traeger](https://github.com/sebirdman/hass_traeger) project
+- Learned from this great [hass-traeger](https://github.com/sebirdman/hass_traeger) project
 - Uses Traeger's unofficial API (subject to change)
