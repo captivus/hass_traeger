@@ -1,6 +1,7 @@
 # TODO
 * Thoroughly test predicted time for each of the set temps on the probes
 * The UI should show the 1st and 2nd derivatives of temperature per minute for each probe, in addition to the estimated time to target temperature.
+* Configure the logging level & output target (console, database, both)
 * We really need a service that will run and collect all of the streamed data from the grill and save it
   * That's the primary thing we need
   * Then we make predictions about time to target temp per probe
