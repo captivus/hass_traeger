@@ -15,7 +15,6 @@ import nest_asyncio
 
 from traeger_client import TraegerClient
 from streaming import DataStream
-from pathlib import Path
 
 # Allow nested event loops in Streamlit
 nest_asyncio.apply()
@@ -319,12 +318,6 @@ def main():
                 
                 # Show database path
                 st.info(f"📁 Database: {storage.db_path}")
-                
-                # Export data
-                if st.button("Export to CSV", type="secondary"):
-                    export_path = Path("./exports") / f"traeger_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-                    grill_count, probe_count = run_async(storage.export_to_csv(export_path))
-                    st.success(f"✅ Exported {grill_count} grill states and {probe_count} probe records to {export_path}")
                 
                 # Show storage stats
                 if st.session_state.selected_grill:
