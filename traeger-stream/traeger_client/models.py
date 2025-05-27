@@ -31,6 +31,7 @@ class ProbeData(BaseModel):
     battery_level: Optional[int] = None
     ambient_temp: Optional[float] = None
     predicted_time_to_target: Optional[float] = None  # Minutes
+    prediction_message: Optional[str] = None  # Explanation when prediction is not possible
 
 
 class GrillStatus(BaseModel):

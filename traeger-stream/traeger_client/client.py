@@ -300,12 +300,12 @@ class TraegerClient:
                 
                 # Get prediction if temperatures are available
                 predicted_time = None
-                if (current_temp is not None and target_temp is not None and 
-                    current_temp < target_temp):
+                prediction_message = None
+                if current_temp is not None and target_temp is not None:
                     # Add temperature reading to predictor
                     self.predictor.add_reading(probe_id, current_temp)
                     # Get prediction
-                    predicted_time = self.predictor.predict_time_to_target(probe_id, target_temp)
+                    predicted_time, prediction_message = self.predictor.predict_time_to_target(probe_id, target_temp)
                 
                 probe = ProbeData(
                     id=probe_id,
@@ -316,12 +316,13 @@ class TraegerClient:
                     alarm_fired=btprobe_data.get("alarm_fired", 0) == 1,
                     battery_level=btprobe_data.get("batt"),
                     ambient_temp=btprobe_data.get("ambient_temp"),
-                    predicted_time_to_target=predicted_time
+                    predicted_time_to_target=predicted_time,
+                    prediction_message=prediction_message
                 )
                 if predicted_time is not None:
                     print(f"DEBUG CLIENT: Probe {probe_id} has prediction: {predicted_time} minutes")
                 else:
-                    print(f"DEBUG CLIENT: Probe {probe_id} has NO prediction")
+                    print(f"DEBUG CLIENT: Probe {probe_id} has NO prediction: {prediction_message}")
                 probes.append(probe)
                 
         return GrillStatus(
@@ -337,6 +338,55 @@ class TraegerClient:
             pellet_level=status_data.get("pellet_level"),
             cook_timer_seconds=status_data.get("cook_timer_remaining"),
             raw_status=data
+        )
+    
+    def update_predictions(self, status: GrillStatus) -> GrillStatus:
+        """Update predictions for an existing GrillStatus object."""
+        # Create new probes list with updated predictions
+        updated_probes = []
+        
+        for probe in status.probes:
+            predicted_time = None
+            prediction_message = None
+            
+            if probe.temperature is not None and probe.target_temperature is not None:
+                # Always add current temperature to ensure predictor has latest data
+                self.predictor.add_reading(probe.id, probe.temperature)
+                
+                # Get prediction
+                predicted_time, prediction_message = self.predictor.predict_time_to_target(
+                    probe.id, probe.target_temperature
+                )
+            
+            # Create new probe with updated predictions
+            updated_probe = ProbeData(
+                id=probe.id,
+                name=probe.name,
+                temperature=probe.temperature,
+                target_temperature=probe.target_temperature,
+                is_connected=probe.is_connected,
+                alarm_fired=probe.alarm_fired,
+                battery_level=probe.battery_level,
+                ambient_temp=probe.ambient_temp,
+                predicted_time_to_target=predicted_time,
+                prediction_message=prediction_message
+            )
+            updated_probes.append(updated_probe)
+        
+        # Create new GrillStatus with updated probes
+        return GrillStatus(
+            thing_name=status.thing_name,
+            friendly_name=status.friendly_name,
+            connected=status.connected,
+            state=status.state,
+            grill_temperature=status.grill_temperature,
+            grill_set_temperature=status.grill_set_temperature,
+            ambient_temperature=status.ambient_temperature,
+            probes=updated_probes,
+            fan_speed=status.fan_speed,
+            pellet_level=status.pellet_level,
+            cook_timer_seconds=status.cook_timer_seconds,
+            raw_status=status.raw_status
         )
     
     def add_status_callback(self, callback: Callable[[GrillStatus], None]):

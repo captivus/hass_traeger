@@ -134,12 +134,12 @@ async def test_predictor():
                         t, temp = history[i]
                         print(f"  {datetime.fromtimestamp(t).strftime('%H:%M:%S')}: {temp:.1f}°F")
             
-            prediction = predictor.predict_time_to_target(probe_id, current['target'])
+            predicted_time, message = predictor.predict_time_to_target(probe_id, current['target'])
             
-            if prediction is not None:
-                print(f"Prediction: {prediction:.1f} minutes to reach {current['target']}°F")
+            if predicted_time is not None:
+                print(f"Prediction: {predicted_time:.1f} minutes to reach {current['target']}°F")
             else:
-                print("No prediction available (temperature may be decreasing)")
+                print(f"No prediction available: {message}")
 
 if __name__ == "__main__":
     asyncio.run(test_predictor())

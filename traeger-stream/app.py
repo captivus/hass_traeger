@@ -105,9 +105,13 @@ async def load_historical_data_to_buffer(storage, stream, thing_name: str, hours
     if not storage or not stream:
         return
         
-    # Clear predictor history when loading new historical data
+    # Clear predictor history only if we're switching grills or don't have any history
     if hasattr(st.session_state, 'client') and st.session_state.client:
-        st.session_state.client.predictor.clear_history()
+        # Check if we're switching grills (thing_name changed)
+        current_grill = getattr(st.session_state, 'predictor_grill', None)
+        if current_grill != thing_name:
+            st.session_state.client.predictor.clear_history()
+            st.session_state.predictor_grill = thing_name
         
     # Calculate time range
     end_time = datetime.now()
@@ -375,6 +379,10 @@ def main():
             # Get current status
             current = buffer.get_latest(st.session_state.selected_grill)
             
+            # Update predictions with current predictor state
+            if current and st.session_state.client:
+                current = st.session_state.client.update_predictions(current)
+            
             if current:
                 # Status indicators
                 col1, col2, col3, col4 = st.columns(4)
@@ -397,6 +405,7 @@ def main():
                 with col3:
                     if current.probes and len(current.probes) > 0:
                         probe = current.probes[0]
+                        print(f"DEBUG APP: Displaying Probe 1 ({probe.id}): temp={probe.temperature}, target={probe.target_temperature}")
                         st.metric(
                             "Probe 1",
                             f"{probe.temperature or '--'}°F",
@@ -407,8 +416,12 @@ def main():
                             print(f"DEBUG APP: Showing prediction for probe {probe.id}: {probe.predicted_time_to_target} minutes")
                             from traeger_client.simple_temperature_predictor import SimpleTemperaturePredictor
                             predictor = SimpleTemperaturePredictor()
-                            prediction_str = predictor.format_prediction(probe.predicted_time_to_target)
+                            prediction_str = predictor.format_prediction((probe.predicted_time_to_target, probe.prediction_message))
                             st.caption(f"⏱️ {prediction_str}")
+                        elif probe.prediction_message:
+                            print(f"DEBUG APP: No prediction for probe {probe.id}: {probe.prediction_message}")
+                            print(f"DEBUG APP: Probe data - temp: {probe.temperature}, target: {probe.target_temperature}")
+                            st.caption(f"⏱️ {probe.prediction_message}")
                         else:
                             print(f"DEBUG APP: No prediction for probe {probe.id}")
                     else:
@@ -427,8 +440,12 @@ def main():
                             print(f"DEBUG APP: Showing prediction for probe {probe.id}: {probe.predicted_time_to_target} minutes")
                             from traeger_client.simple_temperature_predictor import SimpleTemperaturePredictor
                             predictor = SimpleTemperaturePredictor()
-                            prediction_str = predictor.format_prediction(probe.predicted_time_to_target)
+                            prediction_str = predictor.format_prediction((probe.predicted_time_to_target, probe.prediction_message))
                             st.caption(f"⏱️ {prediction_str}")
+                        elif probe.prediction_message:
+                            print(f"DEBUG APP: No prediction for probe {probe.id}: {probe.prediction_message}")
+                            print(f"DEBUG APP: Probe data - temp: {probe.temperature}, target: {probe.target_temperature}")
+                            st.caption(f"⏱️ {probe.prediction_message}")
                         else:
                             print(f"DEBUG APP: No prediction for probe {probe.id}")
                     else:
