@@ -409,7 +409,7 @@ def main():
                             print(f"DEBUG APP: Showing prediction for probe {probe.id}: {probe.predicted_time_to_target} minutes")
                             from traeger_client.simple_temperature_predictor import SimpleTemperaturePredictor
                             predictor = SimpleTemperaturePredictor()
-                            prediction_str = predictor.format_prediction((probe.predicted_time_to_target, probe.prediction_message))
+                            prediction_str = predictor.format_prediction((probe.predicted_time_to_target, probe.prediction_message, probe.temperature_rate, probe.temperature_acceleration))
                             st.caption(f"⏱️ {prediction_str}")
                         elif probe.prediction_message:
                             print(f"DEBUG APP: No prediction for probe {probe.id}: {probe.prediction_message}")
@@ -417,6 +417,12 @@ def main():
                             st.caption(f"⏱️ {probe.prediction_message}")
                         else:
                             print(f"DEBUG APP: No prediction for probe {probe.id}")
+                        
+                        # Show temperature rate and acceleration
+                        if probe.temperature_rate is not None:
+                            rate_sign = "+" if probe.temperature_rate > 0 else ""
+                            accel_sign = "+" if probe.temperature_acceleration > 0 else ""
+                            st.caption(f"📈 {rate_sign}{probe.temperature_rate:.1f}°F/min, {accel_sign}{probe.temperature_acceleration:.2f}°F/min²")
                     else:
                         st.metric("Probe 1", "--°F")
                         
@@ -433,7 +439,7 @@ def main():
                             print(f"DEBUG APP: Showing prediction for probe {probe.id}: {probe.predicted_time_to_target} minutes")
                             from traeger_client.simple_temperature_predictor import SimpleTemperaturePredictor
                             predictor = SimpleTemperaturePredictor()
-                            prediction_str = predictor.format_prediction((probe.predicted_time_to_target, probe.prediction_message))
+                            prediction_str = predictor.format_prediction((probe.predicted_time_to_target, probe.prediction_message, probe.temperature_rate, probe.temperature_acceleration))
                             st.caption(f"⏱️ {prediction_str}")
                         elif probe.prediction_message:
                             print(f"DEBUG APP: No prediction for probe {probe.id}: {probe.prediction_message}")
@@ -441,6 +447,12 @@ def main():
                             st.caption(f"⏱️ {probe.prediction_message}")
                         else:
                             print(f"DEBUG APP: No prediction for probe {probe.id}")
+                        
+                        # Show temperature rate and acceleration
+                        if probe.temperature_rate is not None:
+                            rate_sign = "+" if probe.temperature_rate > 0 else ""
+                            accel_sign = "+" if probe.temperature_acceleration > 0 else ""
+                            st.caption(f"📈 {rate_sign}{probe.temperature_rate:.1f}°F/min, {accel_sign}{probe.temperature_acceleration:.2f}°F/min²")
                     else:
                         st.metric("Probe 2", "--°F")
                     

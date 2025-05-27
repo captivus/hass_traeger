@@ -32,6 +32,8 @@ class ProbeData(BaseModel):
     ambient_temp: Optional[float] = None
     predicted_time_to_target: Optional[float] = None  # Minutes
     prediction_message: Optional[str] = None  # Explanation when prediction is not possible
+    temperature_rate: Optional[float] = None  # °F/minute (1st derivative)
+    temperature_acceleration: Optional[float] = None  # °F/minute² (2nd derivative)
 
 
 class GrillStatus(BaseModel):

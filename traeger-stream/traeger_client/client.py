@@ -301,11 +301,13 @@ class TraegerClient:
                 # Get prediction if temperatures are available
                 predicted_time = None
                 prediction_message = None
+                temp_rate = None
+                temp_acceleration = None
                 if current_temp is not None and target_temp is not None:
                     # Add temperature reading to predictor
                     self.predictor.add_reading(probe_id, current_temp)
                     # Get prediction
-                    predicted_time, prediction_message = self.predictor.predict_time_to_target(probe_id, target_temp)
+                    predicted_time, prediction_message, temp_rate, temp_acceleration = self.predictor.predict_time_to_target(probe_id, target_temp)
                 
                 probe = ProbeData(
                     id=probe_id,
@@ -317,7 +319,9 @@ class TraegerClient:
                     battery_level=btprobe_data.get("batt"),
                     ambient_temp=btprobe_data.get("ambient_temp"),
                     predicted_time_to_target=predicted_time,
-                    prediction_message=prediction_message
+                    prediction_message=prediction_message,
+                    temperature_rate=temp_rate,
+                    temperature_acceleration=temp_acceleration
                 )
                 if predicted_time is not None:
                     print(f"DEBUG CLIENT: Probe {probe_id} has prediction: {predicted_time} minutes")
@@ -348,13 +352,15 @@ class TraegerClient:
         for probe in status.probes:
             predicted_time = None
             prediction_message = None
+            temp_rate = None
+            temp_acceleration = None
             
             if probe.temperature is not None and probe.target_temperature is not None:
                 # Always add current temperature to ensure predictor has latest data
                 self.predictor.add_reading(probe.id, probe.temperature)
                 
                 # Get prediction
-                predicted_time, prediction_message = self.predictor.predict_time_to_target(
+                predicted_time, prediction_message, temp_rate, temp_acceleration = self.predictor.predict_time_to_target(
                     probe.id, probe.target_temperature
                 )
             
@@ -369,7 +375,9 @@ class TraegerClient:
                 battery_level=probe.battery_level,
                 ambient_temp=probe.ambient_temp,
                 predicted_time_to_target=predicted_time,
-                prediction_message=prediction_message
+                prediction_message=prediction_message,
+                temperature_rate=temp_rate,
+                temperature_acceleration=temp_acceleration
             )
             updated_probes.append(updated_probe)
         

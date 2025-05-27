@@ -38,7 +38,7 @@ class SimpleTemperaturePredictor:
         if len(self.temp_history[probe_id]) % 10 == 0:  # Log every 10th reading
             print(f"DEBUG: Probe {probe_id} now has {len(self.temp_history[probe_id])} readings")
     
-    def predict_time_to_target(self, probe_id: str, target_temperature: float) -> Tuple[Optional[float], Optional[str]]:
+    def predict_time_to_target(self, probe_id: str, target_temperature: float) -> Tuple[Optional[float], Optional[str], Optional[float], Optional[float]]:
         """Predict time to reach target temperature.
         
         Args:
@@ -46,17 +46,19 @@ class SimpleTemperaturePredictor:
             target_temperature: Target temperature in °F
             
         Returns:
-            Tuple of (minutes_to_target, message)
+            Tuple of (minutes_to_target, message, rate, acceleration)
             - minutes_to_target: Time in minutes or None if cannot predict
             - message: Explanation when prediction is not possible
+            - rate: Temperature change rate in °F/minute (1st derivative)
+            - acceleration: Temperature change acceleration in °F/minute² (2nd derivative)
         """
         if probe_id not in self.temp_history:
             print(f"DEBUG: No history for probe {probe_id}")
-            return (None, "No temperature data available")
+            return (None, "No temperature data available", None, None)
         
         if len(self.temp_history[probe_id]) < 3:
             print(f"DEBUG: Not enough data for probe {probe_id}. History: {len(self.temp_history[probe_id])}")
-            return (None, "Insufficient data for prediction")
+            return (None, "Insufficient data for prediction", None, None)
         
         history = self.temp_history[probe_id]
         current_temp = history[-1][1]
@@ -64,7 +66,7 @@ class SimpleTemperaturePredictor:
         # Already at or above target
         if current_temp >= target_temperature:
             print(f"DEBUG: Probe {probe_id} already at target. Current: {current_temp}, Target: {target_temperature}")
-            return (None, "Already at target temperature")
+            return (None, "Already at target temperature", None, None)
         
         # Extract time and temperature arrays
         times = np.array([t for t, _ in history])
@@ -87,10 +89,13 @@ class SimpleTemperaturePredictor:
         # Check for decreasing temperature
         if current_velocity <= 0:
             print(f"DEBUG: Probe {probe_id} velocity <= 0: {current_velocity:.4f}")
+            # Convert to °F/minute for return
+            rate_per_minute = current_velocity * 60
+            accel_per_minute = acceleration * 60
             if current_velocity < -0.01:  # Significantly decreasing
-                return (None, "Temperature is decreasing")
+                return (None, "Temperature is decreasing", rate_per_minute, accel_per_minute)
             else:  # Stable temperature
-                return (None, "Temperature is stable")
+                return (None, "Temperature is stable", rate_per_minute, accel_per_minute)
         
         # Solve quadratic equation: target = current + v*t + 0.5*a*t²
         # Rearranged: 0.5*a*t² + v*t + (current - target) = 0
@@ -101,12 +106,15 @@ class SimpleTemperaturePredictor:
         # Handle different cases
         if abs(a) < 1e-6:  # Linear case (no acceleration)
             if abs(b) < 1e-6:  # No change
-                return (None, "Temperature is not changing")
+                return (None, "Temperature is not changing", 0.0, 0.0)
             time_to_target = -c / b
         else:  # Quadratic case
             discriminant = b**2 - 4*a*c
             if discriminant < 0:
-                return (None, "Temperature curve suggests target unreachable")
+                # Convert to °F/minute for return
+                rate_per_minute = current_velocity * 60
+                accel_per_minute = acceleration * 60
+                return (None, "Temperature curve suggests target unreachable", rate_per_minute, accel_per_minute)
             
             # Use positive root
             t1 = (-b + np.sqrt(discriminant)) / (2*a)
@@ -116,15 +124,23 @@ class SimpleTemperaturePredictor:
             valid_times = [t for t in [t1, t2] if t > 0]
             if not valid_times:
                 print(f"DEBUG: Probe {probe_id} no valid positive roots. t1={t1:.2f}, t2={t2:.2f}")
-                return (None, "Invalid prediction model")
+                # Convert to °F/minute for return
+                rate_per_minute = current_velocity * 60
+                accel_per_minute = acceleration * 60
+                return (None, "Invalid prediction model", rate_per_minute, accel_per_minute)
             
             time_to_target = min(valid_times)
         
         # Convert from seconds to minutes
         minutes_to_target = time_to_target / 60
         
+        # Convert rates to °F/minute
+        rate_per_minute = current_velocity * 60
+        accel_per_minute = acceleration * 60
+        
         print(f"DEBUG: Prediction for probe {probe_id}: {minutes_to_target:.1f} minutes")
-        return (minutes_to_target, None)
+        print(f"DEBUG: Rate: {rate_per_minute:.2f} °F/min, Acceleration: {accel_per_minute:.3f} °F/min²")
+        return (minutes_to_target, None, rate_per_minute, accel_per_minute)
     
     def _calculate_derivative(self, times: np.ndarray, values: np.ndarray) -> float:
         """Calculate the first derivative using linear regression."""
@@ -145,16 +161,16 @@ class SimpleTemperaturePredictor:
         # For y = at² + bt + c, acceleration = 2a
         return 2 * coeffs[0]
     
-    def format_prediction(self, prediction: Tuple[Optional[float], Optional[str]]) -> str:
+    def format_prediction(self, prediction: Tuple[Optional[float], Optional[str], Optional[float], Optional[float]]) -> str:
         """Format prediction for display.
         
         Args:
-            prediction: Tuple of (minutes, message)
+            prediction: Tuple of (minutes, message, rate, acceleration)
             
         Returns:
             Formatted string for display
         """
-        minutes, message = prediction
+        minutes, message, rate, acceleration = prediction
         
         if minutes is None:
             return message or "Cannot predict"
