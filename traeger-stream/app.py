@@ -63,6 +63,8 @@ if "selected_grill" not in st.session_state:
     st.session_state.selected_grill = None
 if "historical_loaded" not in st.session_state:
     st.session_state.historical_loaded = False
+if "last_refresh_time" not in st.session_state:
+    st.session_state.last_refresh_time = None
 
 
 async def connect_to_traeger():
@@ -289,7 +291,18 @@ def main():
         # Connection status
         if st.session_state.connected:
             st.success("✅ Connected")
-            st.info("🔄 Refreshes every 30 seconds")
+            # Show refresh info with last refresh time
+            refresh_info = "🔄 Refreshes every 30 seconds"
+            if st.session_state.last_refresh_time:
+                elapsed = datetime.now() - st.session_state.last_refresh_time
+                if elapsed.total_seconds() < 60:
+                    time_ago = f"{int(elapsed.total_seconds())}s ago"
+                elif elapsed.total_seconds() < 3600:
+                    time_ago = f"{int(elapsed.total_seconds() / 60)}m ago"
+                else:
+                    time_ago = f"{int(elapsed.total_seconds() / 3600)}h ago"
+                refresh_info += f" (Last: {time_ago})"
+            st.info(refresh_info)
             
             # Grill selector
             if st.session_state.client:
@@ -394,6 +407,9 @@ def main():
             # Use fragment for auto-refreshing live monitor
             @st.fragment(run_every=30)
             def live_monitor_fragment():
+                # Update last refresh time
+                st.session_state.last_refresh_time = datetime.now()
+                
                 # Get buffer inside fragment
                 buffer = st.session_state.stream.get_buffer()
                 
@@ -478,6 +494,11 @@ def main():
                     
                     fig = create_temperature_chart(df)
                     st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Show last update time with timezone
+                    local_tz = pytz.timezone(TIMEZONE)
+                    last_update = datetime.now(local_tz)
+                    st.caption(f"📅 Last updated: {last_update.strftime('%Y-%m-%d %H:%M:%S %Z')}")
                 
                             
                 else:
