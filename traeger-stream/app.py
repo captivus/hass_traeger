@@ -514,10 +514,8 @@ def main():
                             end_time=utc_end
                         ))
                     
-                    st.caption(f"Query range: {utc_start} UTC to {utc_end} UTC")
                     
                     if raw_messages:
-                        st.info(f"Found {len(raw_messages)} data points")
                         
                         # Parse raw messages to extract data
                         records = []
@@ -556,7 +554,6 @@ def main():
                             st.warning(f"Failed to parse {parse_errors} messages")
                         
                         if records:
-                            st.caption(f"Successfully parsed {len(records)} of {len(raw_messages)} messages")
                             
                             # Convert to DataFrame
                             df = pd.DataFrame(records)
@@ -568,8 +565,6 @@ def main():
                             fig = create_temperature_chart(df)
                             st.plotly_chart(fig, use_container_width=True)
                             
-                            # Show data info
-                            st.caption(f"Data spans from {df['timestamp'].min()} to {df['timestamp'].max()}")
                             
                             # Show statistics
                             st.subheader("Statistics")
