@@ -10,9 +10,9 @@ from dotenv import load_dotenv
 import os
 import logging
 import json
-import time
 import nest_asyncio
 import pytz
+import time
 
 from traeger_client import TraegerClient
 from streaming import DataStream
@@ -302,8 +302,12 @@ def main():
                     )
                     new_grill = grills[selected_idx]["thing_name"]
                     if st.session_state.selected_grill != new_grill:
+                        # Clear historical loaded flag for the old grill
+                        if st.session_state.selected_grill:
+                            old_key = f"historical_loaded_{st.session_state.selected_grill}"
+                            if old_key in st.session_state:
+                                del st.session_state[old_key]
                         st.session_state.selected_grill = new_grill
-                        st.session_state.historical_loaded = False
                     
             # Refresh interval
             refresh_rate = st.slider("Refresh Rate (seconds)", 1, 10, 2)
@@ -325,7 +329,11 @@ def main():
             if st.button("Reload Historical Data", type="secondary"):
                 if st.session_state.stream:
                     st.session_state.stream.buffer.clear()
-                    st.session_state.historical_loaded = False
+                    # Clear historical loaded flag for current grill
+                    if st.session_state.selected_grill:
+                        hist_key = f"historical_loaded_{st.session_state.selected_grill}"
+                        if hist_key in st.session_state:
+                            del st.session_state[hist_key]
                 st.rerun()
             
             # Data Storage
@@ -373,11 +381,9 @@ def main():
         with tab1:
             st.session_state.active_tab = 0
             
-            # Load historical data if buffer is empty
-            buffer = st.session_state.stream.get_buffer()
-            
-            # Check if we need to load historical data
-            if not st.session_state.historical_loaded and st.session_state.client and st.session_state.client.storage:
+            # Load historical data if needed (outside fragment)
+            hist_key = f"historical_loaded_{st.session_state.selected_grill}"
+            if not st.session_state.get(hist_key, False) and st.session_state.client and st.session_state.client.storage:
                 with st.spinner("Loading historical data..."):
                     run_async(load_historical_data_to_buffer(
                         st.session_state.client.storage,
@@ -385,123 +391,121 @@ def main():
                         st.session_state.selected_grill,
                         hours=st.session_state.get('historical_hours', 24)
                     ))
-                    st.session_state.historical_loaded = True
+                    st.session_state[hist_key] = True
                     st.rerun()
             
-            # Get current status
-            current = buffer.get_latest(st.session_state.selected_grill)
-            
-            # Update predictions with current predictor state
-            if current and st.session_state.client:
-                current = st.session_state.client.update_predictions(current)
-            
-            if current:
-                # Status indicators
-                col1, col2, col3, col4 = st.columns(4)
-            
-                with col1:
-                    st.metric(
-                        "Status",
-                        current.state.name,
-                        delta=None,
-                        delta_color="normal"
-                    )
-                    
-                with col2:
-                    st.metric(
-                        "Grill Temp",
-                        f"{current.grill_temperature or '--'}°F",
-                        delta=f"Set: {current.grill_set_temperature or '--'}°F"
-                    )
-                    
-                with col3:
-                    if current.probes and len(current.probes) > 0:
-                        probe = current.probes[0]
-                        print(f"DEBUG APP: Displaying Probe 1 ({probe.id}): temp={probe.temperature}, target={probe.target_temperature}")
-                        st.metric(
-                            "Probe 1",
-                            f"{probe.temperature or '--'}°F",
-                            delta=f"Target: {probe.target_temperature or '--'}°F"
-                        )
-                        # Show prediction if available
-                        if probe.predicted_time_to_target is not None:
-                            print(f"DEBUG APP: Showing prediction for probe {probe.id}: {probe.predicted_time_to_target} minutes")
-                            from traeger_client.simple_temperature_predictor import SimpleTemperaturePredictor
-                            predictor = SimpleTemperaturePredictor()
-                            prediction_str = predictor.format_prediction((probe.predicted_time_to_target, probe.prediction_message, probe.temperature_rate, probe.temperature_acceleration))
-                            st.caption(f"⏱️ {prediction_str}")
-                        elif probe.prediction_message:
-                            print(f"DEBUG APP: No prediction for probe {probe.id}: {probe.prediction_message}")
-                            print(f"DEBUG APP: Probe data - temp: {probe.temperature}, target: {probe.target_temperature}")
-                            st.caption(f"⏱️ {probe.prediction_message}")
-                        else:
-                            print(f"DEBUG APP: No prediction for probe {probe.id}")
-                        
-                        # Show temperature rate and acceleration
-                        if probe.temperature_rate is not None:
-                            rate_sign = "+" if probe.temperature_rate > 0 else ""
-                            accel_sign = "+" if probe.temperature_acceleration > 0 else ""
-                            st.caption(f"📈 {rate_sign}{probe.temperature_rate:.1f}°F/min, {accel_sign}{probe.temperature_acceleration:.2f}°F/min²")
-                    else:
-                        st.metric("Probe 1", "--°F")
-                        
-                with col4:
-                    if current.probes and len(current.probes) > 1:
-                        probe = current.probes[1]
-                        st.metric(
-                            "Probe 2",
-                            f"{probe.temperature or '--'}°F",
-                            delta=f"Target: {probe.target_temperature or '--'}°F"
-                        )
-                        # Show prediction if available
-                        if probe.predicted_time_to_target is not None:
-                            print(f"DEBUG APP: Showing prediction for probe {probe.id}: {probe.predicted_time_to_target} minutes")
-                            from traeger_client.simple_temperature_predictor import SimpleTemperaturePredictor
-                            predictor = SimpleTemperaturePredictor()
-                            prediction_str = predictor.format_prediction((probe.predicted_time_to_target, probe.prediction_message, probe.temperature_rate, probe.temperature_acceleration))
-                            st.caption(f"⏱️ {prediction_str}")
-                        elif probe.prediction_message:
-                            print(f"DEBUG APP: No prediction for probe {probe.id}: {probe.prediction_message}")
-                            print(f"DEBUG APP: Probe data - temp: {probe.temperature}, target: {probe.target_temperature}")
-                            st.caption(f"⏱️ {probe.prediction_message}")
-                        else:
-                            print(f"DEBUG APP: No prediction for probe {probe.id}")
-                        
-                        # Show temperature rate and acceleration
-                        if probe.temperature_rate is not None:
-                            rate_sign = "+" if probe.temperature_rate > 0 else ""
-                            accel_sign = "+" if probe.temperature_acceleration > 0 else ""
-                            st.caption(f"📈 {rate_sign}{probe.temperature_rate:.1f}°F/min, {accel_sign}{probe.temperature_acceleration:.2f}°F/min²")
-                    else:
-                        st.metric("Probe 2", "--°F")
-                    
-                # Temperature chart
-                st.subheader("Temperature History")
+            # Use fragment for auto-refreshing live monitor
+            @st.fragment(run_every=st.session_state.get('refresh_rate', 2) if st.session_state.get('refresh_rate', 0) > 0 else None)
+            def live_monitor_fragment():
+                # Get buffer inside fragment
+                buffer = st.session_state.stream.get_buffer()
                 
-                # Get data for plotting
-                df = buffer.get_dataframe(st.session_state.selected_grill)
+                # Get current status
+                current = buffer.get_latest(st.session_state.selected_grill)
                 
-                # Debug info
-                with st.expander("Debug Info"):
-                    st.write(f"Buffer has {len(buffer.data)} total entries")
-                    st.write(f"DataFrame has {len(df)} rows for {st.session_state.selected_grill}")
-                    if not df.empty:
-                        st.write(f"Time range: {df['timestamp'].min()} to {df['timestamp'].max()}")
-                        st.write("First few rows:")
-                        st.dataframe(df.head())
+                # Update predictions with current predictor state
+                if current and st.session_state.client:
+                    current = st.session_state.client.update_predictions(current)
+                
+                if current:
+                    # Status indicators
+                    col1, col2, col3, col4 = st.columns(4)
                     
-                fig = create_temperature_chart(df)
-                st.plotly_chart(fig, use_container_width=True)
+                    with col1:
+                        st.metric(
+                            "Status",
+                            current.state.name,
+                            delta=None,
+                            delta_color="normal"
+                        )
+                    
+                    with col2:
+                        st.metric(
+                            "Grill Temp",
+                            f"{current.grill_temperature or '--'}°F",
+                            delta=f"Set: {current.grill_set_temperature or '--'}°F"
+                        )
+                    
+                    # Display only active probes (those with temperature data)
+                    active_probes = []
+                    if current.probes:
+                        for probe in current.probes:
+                            if probe.temperature is not None:
+                                active_probes.append(probe)
+                    
+                    # Use remaining columns for probes
+                    probe_cols = [col3, col4]
+                    
+                    # Display active probes
+                    for i, probe in enumerate(active_probes[:2]):  # Show up to 2 probes
+                        with probe_cols[i]:
+                            # Determine probe type based on ID
+                            probe_label = f"Probe {i+1}"
+                            if probe.id:
+                                if 'wired' in probe.id.lower():
+                                    probe_label = f"Wired Probe {i+1}"
+                                elif 'bluetooth' in probe.id.lower() or 'bt' in probe.id.lower():
+                                    probe_label = f"BT Probe {i+1}"
+                            
+                            print(f"DEBUG APP: Displaying {probe_label} ({probe.id}): temp={probe.temperature}, target={probe.target_temperature}")
+                            st.metric(
+                                probe_label,
+                                f"{probe.temperature}°F",
+                                delta=f"Target: {probe.target_temperature or '--'}°F"
+                            )
+                            
+                            # Show prediction if available
+                            if probe.predicted_time_to_target is not None:
+                                print(f"DEBUG APP: Showing prediction for probe {probe.id}: {probe.predicted_time_to_target} minutes")
+                                from traeger_client.simple_temperature_predictor import SimpleTemperaturePredictor
+                                predictor = SimpleTemperaturePredictor()
+                                prediction_str = predictor.format_prediction((probe.predicted_time_to_target, probe.prediction_message, probe.temperature_rate, probe.temperature_acceleration))
+                                st.caption(f"⏱️ {prediction_str}")
+                            elif probe.prediction_message:
+                                print(f"DEBUG APP: No prediction for probe {probe.id}: {probe.prediction_message}")
+                                print(f"DEBUG APP: Probe data - temp: {probe.temperature}, target: {probe.target_temperature}")
+                                st.caption(f"⏱️ {probe.prediction_message}")
+                            
+                            # Show temperature rate and acceleration
+                            if probe.temperature_rate is not None:
+                                rate_sign = "+" if probe.temperature_rate > 0 else ""
+                                accel_sign = "+" if probe.temperature_acceleration > 0 else ""
+                                st.caption(f"📈 {rate_sign}{probe.temperature_rate:.1f}°F/min, {accel_sign}{probe.temperature_acceleration:.2f}°F/min²")
+                    
+                    # Fill remaining columns if no active probes
+                    for i in range(len(active_probes), 2):
+                        with probe_cols[i]:
+                            st.empty()  # Just leave empty instead of showing "--°F"
+                    
+                    # Temperature chart
+                    st.subheader("Temperature History")
+                    
+                    # Get data for plotting
+                    df = buffer.get_dataframe(st.session_state.selected_grill)
+                    
+                    # Debug info
+                    with st.expander("Debug Info"):
+                        st.write(f"Buffer has {len(buffer.data)} total entries")
+                        st.write(f"DataFrame has {len(df)} rows for {st.session_state.selected_grill}")
+                        if not df.empty:
+                            st.write(f"Time range: {df['timestamp'].min()} to {df['timestamp'].max()}")
+                            st.write("First few rows:")
+                            st.dataframe(df.head())
+                    
+                    fig = create_temperature_chart(df)
+                    st.plotly_chart(fig, use_container_width=True)
                 
                             
-            else:
-                st.info("🔄 Requesting live data from grill... (this may take a few seconds)")
-                
-                # Show spinner while waiting
-                with st.spinner("Connecting to grill..."):
-                    # The page will auto-refresh based on the refresh rate
-                    pass
-                
+                else:
+                    st.info("🔄 Requesting live data from grill... (this may take a few seconds)")
+                    
+                    # Show spinner while waiting
+                    with st.spinner("Connecting to grill..."):
+                        # The page will auto-refresh based on the refresh rate
+                        pass
+            
+            # Call the fragment
+            live_monitor_fragment()
         
         with tab2:
             st.session_state.active_tab = 1
@@ -637,16 +641,6 @@ def main():
         st.info("Connecting to Traeger services...")
     else:
         st.info("Please select a grill from the sidebar.")
-    
-    # Auto-refresh logic outside of tabs
-    # Only refresh if we're on the Live Monitor tab
-    if (st.session_state.connected and 
-        st.session_state.selected_grill and 
-        st.session_state.get('active_tab', 0) == 0):
-        refresh_rate = st.session_state.get('refresh_rate', 2)
-        if refresh_rate > 0:
-            time.sleep(refresh_rate)
-            st.rerun()
 
 
 if __name__ == "__main__":
