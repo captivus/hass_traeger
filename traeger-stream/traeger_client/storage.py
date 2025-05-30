@@ -4,6 +4,9 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class DataStorage:
@@ -50,12 +53,23 @@ class DataStorage:
     
     def _save_raw_message_sync(self, topic: str, payload: str) -> None:
         """Synchronous method to save raw message."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
+        import logging
+        logger = logging.getLogger(__name__)
+        conn = None
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.execute(
                 "INSERT INTO raw_messages (topic, payload) VALUES (?, ?)",
                 (topic, payload)
             )
             conn.commit()
+            logger.info(f"Successfully saved message to DB. Row ID: {cursor.lastrowid}, DB: {self.db_path}")
+        except Exception as e:
+            logger.error(f"Failed to save message to DB: {e}")
+            raise
+        finally:
+            if conn:
+                conn.close()
     
     async def get_raw_messages(
         self,
@@ -110,8 +124,13 @@ class DataStorage:
                 query += " LIMIT ?"
                 params.append(limit)
             
+            print(f"DEBUG Storage: Executing query: {query}")
+            print(f"DEBUG Storage: With params: {params}")
             cursor = conn.execute(query, params)
-            return [dict(row) for row in cursor.fetchall()]
+            results = [dict(row) for row in cursor.fetchall()]
+            print(f"DEBUG Storage: Query returned {len(results)} records")
+            logger.info(f"Storage query returned {len(results)} records. Query: {query}, Params: {params}")
+            return results
     
     async def export_to_csv(
         self,

@@ -57,18 +57,14 @@ class TraegerClient:
         self.storage: Optional[DataStorage] = None
         if enable_storage:
             self.storage = DataStorage(Path(db_path) if db_path else None)
+            logger.info(f"Storage enabled with database: {self.storage.db_path}")
             
         # Temperature predictor
         self.predictor = SimpleTemperaturePredictor()
             
-        # Store main event loop for cross-thread operations
-        self._main_loop: Optional[asyncio.AbstractEventLoop] = None
         
     async def connect(self):
         """Connect to Traeger services."""
-        # Store the current event loop
-        self._main_loop = asyncio.get_running_loop()
-        
         self.session = aiohttp.ClientSession()
         await self._authenticate()
         await self._discover_grills()
@@ -235,16 +231,13 @@ class TraegerClient:
             
             # Save to database if storage is enabled
             if self.storage:
-                # Queue the save operations to be run in the main event loop
                 try:
-                    # Save raw message
-                    asyncio.run_coroutine_threadsafe(
-                        self._save_raw_message(message.topic, message.payload.decode()),
-                        self._main_loop
-                    )
-                    
+                    # Use the synchronous method directly since we're in a callback thread
+                    self.storage._save_raw_message_sync(message.topic, message.payload.decode())
+                    logger.info(f"Saved message to database: {message.topic} (DB: {self.storage.db_path})")
                 except Exception as e:
                     logger.error(f"Error saving to database: {e}")
+                    logger.exception("Full traceback:")
             
             # Notify callbacks
             for callback in self._status_callbacks:
@@ -253,12 +246,6 @@ class TraegerClient:
         except Exception as e:
             logger.error(f"Error processing message: {e}")
     
-    async def _save_raw_message(self, topic: str, payload: str):
-        """Save raw message to storage."""
-        try:
-            await self.storage.save_raw_message(topic, payload)
-        except Exception as e:
-            logger.error(f"Error saving raw message: {e}")
             
     def _parse_status(self, thing_name: str, data: Dict[str, Any]) -> GrillStatus:
         """Parse raw status data into GrillStatus model."""

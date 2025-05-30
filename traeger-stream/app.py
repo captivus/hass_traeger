@@ -12,6 +12,7 @@ import logging
 import json
 import time
 import nest_asyncio
+import pytz
 
 from traeger_client import TraegerClient
 from streaming import DataStream
@@ -74,7 +75,7 @@ async def connect_to_traeger():
         return False
         
     try:
-        client = TraegerClient(username, password)
+        client = TraegerClient(username, password, enable_storage=True)
         await client.connect()
         
         stream = DataStream(client)
@@ -112,21 +113,34 @@ async def load_historical_data_to_buffer(storage, stream, thing_name: str, hours
             st.session_state.client.predictor.clear_history()
             st.session_state.predictor_grill = thing_name
         
-    # Calculate time range
-    end_time = datetime.now()
-    start_time = end_time - timedelta(hours=hours)
+    # Calculate time range in UTC for database query
+    # Get current time in local timezone
+    local_tz = pytz.timezone(TIMEZONE)
+    local_now = datetime.now(local_tz)
+    
+    # Calculate start time
+    local_start = local_now - timedelta(hours=hours)
+    
+    # Convert to UTC for database query (database stores in UTC)
+    utc_end = local_now.astimezone(pytz.UTC).replace(tzinfo=None)
+    utc_start = local_start.astimezone(pytz.UTC).replace(tzinfo=None)
     
     # Fetch raw messages from database
+    logger.info(f"Loading historical data from {utc_start} UTC to {utc_end} UTC (Local: {local_start} to {local_now})")
     raw_messages = await storage.get_raw_messages(
-        start_time=start_time,
-        end_time=end_time
+        start_time=utc_start,
+        end_time=utc_end
     )
     
+    logger.info(f"Found {len(raw_messages) if raw_messages else 0} raw messages in database")
+    
     if not raw_messages:
+        logger.warning("No historical data found in database")
         return
     
     # Parse messages and convert to GrillStatus objects
     historical_data = []
+    skipped_count = 0
     
     for msg in raw_messages:
         try:
@@ -142,6 +156,7 @@ async def load_historical_data_to_buffer(storage, stream, thing_name: str, hours
             
             # Skip if not for our grill
             if msg_thing_name != thing_name:
+                skipped_count += 1
                 continue
                 
             # Parse into GrillStatus using client's parser
@@ -167,9 +182,13 @@ async def load_historical_data_to_buffer(storage, stream, thing_name: str, hours
             continue
     
     # Load into buffer
+    logger.info(f"Processed {len(raw_messages)} messages: {len(historical_data)} for grill {thing_name}, {skipped_count} skipped")
+    
     if historical_data:
         stream.buffer.load_historical_data(historical_data)
         logger.info(f"Loaded {len(historical_data)} historical data points for {thing_name}")
+    else:
+        logger.warning(f"No data points matched grill {thing_name}")
 
 
 def create_temperature_chart(df: pd.DataFrame):
@@ -476,7 +495,12 @@ def main():
                 
                             
             else:
-                st.info("Waiting for data...")
+                st.info("🔄 Requesting live data from grill... (this may take a few seconds)")
+                
+                # Show spinner while waiting
+                with st.spinner("Connecting to grill..."):
+                    # The page will auto-refresh based on the refresh rate
+                    pass
                 
         
         with tab2:
@@ -496,19 +520,33 @@ def main():
                     end_date = st.date_input("End Date", value=datetime.now().date())
                 
                 if st.button("Load Historical Data"):
-                    # Convert dates to datetime
-                    start_datetime = datetime.combine(start_date, datetime.min.time())
-                    end_datetime = datetime.combine(end_date, datetime.max.time())
+                    # Convert dates to datetime in local timezone
+                    local_tz = pytz.timezone(TIMEZONE)
+                    start_datetime = local_tz.localize(datetime.combine(start_date, datetime.min.time()))
+                    # Use end of day (23:59:59.999999) to include the entire end date
+                    end_datetime = local_tz.localize(datetime.combine(end_date, datetime.max.time().replace(microsecond=999999)))
+                    
+                    # Convert to UTC for database query
+                    utc_start = start_datetime.astimezone(pytz.UTC).replace(tzinfo=None)
+                    utc_end = end_datetime.astimezone(pytz.UTC).replace(tzinfo=None)
                     
                     # Load raw messages from database
-                    raw_messages = run_async(storage.get_raw_messages(
-                        start_time=start_datetime,
-                        end_time=end_datetime
-                    ))
+                    with st.spinner(f"Loading data from {start_date} to {end_date}..."):
+                        print(f"DEBUG App: About to query storage from {utc_start} to {utc_end}")
+                        raw_messages = run_async(storage.get_raw_messages(
+                            start_time=utc_start,
+                            end_time=utc_end
+                        ))
+                        print(f"DEBUG App: Storage returned {len(raw_messages) if raw_messages else 0} messages")
+                    
+                    st.caption(f"Query range: {utc_start} UTC to {utc_end} UTC")
                     
                     if raw_messages:
+                        st.info(f"Found {len(raw_messages)} data points")
+                        
                         # Parse raw messages to extract data
                         records = []
+                        parse_errors = 0
                         for msg in raw_messages:
                             try:
                                 payload = json.loads(msg['payload'])
@@ -535,10 +573,16 @@ def main():
                                 
                                 records.append(record)
                             except Exception as e:
-                                st.warning(f"Error parsing message: {e}")
+                                parse_errors += 1
+                                logger.error(f"Error parsing message: {e}, payload: {msg.get('payload', '')[:100]}")
                                 continue
                         
+                        if parse_errors > 0:
+                            st.warning(f"Failed to parse {parse_errors} messages")
+                        
                         if records:
+                            st.caption(f"Successfully parsed {len(records)} of {len(raw_messages)} messages")
+                            
                             # Convert to DataFrame
                             df = pd.DataFrame(records)
                             # Convert UTC timestamps to local time
@@ -548,6 +592,9 @@ def main():
                             # Create historical chart
                             fig = create_temperature_chart(df)
                             st.plotly_chart(fig, use_container_width=True)
+                            
+                            # Show data info
+                            st.caption(f"Data spans from {df['timestamp'].min()} to {df['timestamp'].max()}")
                             
                             # Show statistics
                             st.subheader("Statistics")

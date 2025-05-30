@@ -159,6 +159,12 @@ class DataStream:
             command = GrillCommand.update_status(grill["thing_name"])
             await self.client.send_command(command)
             
+        # Give a moment for initial response, then request again to ensure we get data
+        await asyncio.sleep(2)
+        for grill in self.client.list_grills():
+            command = GrillCommand.update_status(grill["thing_name"])
+            await self.client.send_command(command)
+            
         # Keep connection alive
         while self._running:
             await asyncio.sleep(30)
