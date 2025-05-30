@@ -71,7 +71,7 @@ venv.bak/
 *.db
 *.sqlite
 *.csv
-data/
+*.db
 logs/
 graphite/
 
