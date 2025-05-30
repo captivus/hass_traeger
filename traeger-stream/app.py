@@ -444,7 +444,6 @@ def main():
                                 elif 'bluetooth' in probe.id.lower() or 'bt' in probe.id.lower():
                                     probe_label = f"BT Probe {i+1}"
                             
-                            print(f"DEBUG APP: Displaying {probe_label} ({probe.id}): temp={probe.temperature}, target={probe.target_temperature}")
                             st.metric(
                                 probe_label,
                                 f"{probe.temperature}°F",
@@ -453,14 +452,11 @@ def main():
                             
                             # Show prediction if available
                             if probe.predicted_time_to_target is not None:
-                                print(f"DEBUG APP: Showing prediction for probe {probe.id}: {probe.predicted_time_to_target} minutes")
                                 from traeger_client.simple_temperature_predictor import SimpleTemperaturePredictor
                                 predictor = SimpleTemperaturePredictor()
                                 prediction_str = predictor.format_prediction((probe.predicted_time_to_target, probe.prediction_message, probe.temperature_rate, probe.temperature_acceleration))
                                 st.caption(f"⏱️ {prediction_str}")
                             elif probe.prediction_message:
-                                print(f"DEBUG APP: No prediction for probe {probe.id}: {probe.prediction_message}")
-                                print(f"DEBUG APP: Probe data - temp: {probe.temperature}, target: {probe.target_temperature}")
                                 st.caption(f"⏱️ {probe.prediction_message}")
                             
                             # Show temperature rate and acceleration
@@ -479,15 +475,6 @@ def main():
                     
                     # Get data for plotting
                     df = buffer.get_dataframe(st.session_state.selected_grill)
-                    
-                    # Debug info
-                    with st.expander("Debug Info"):
-                        st.write(f"Buffer has {len(buffer.data)} total entries")
-                        st.write(f"DataFrame has {len(df)} rows for {st.session_state.selected_grill}")
-                        if not df.empty:
-                            st.write(f"Time range: {df['timestamp'].min()} to {df['timestamp'].max()}")
-                            st.write("First few rows:")
-                            st.dataframe(df.head())
                     
                     fig = create_temperature_chart(df)
                     st.plotly_chart(fig, use_container_width=True)
@@ -533,12 +520,10 @@ def main():
                     
                     # Load raw messages from database
                     with st.spinner(f"Loading data from {start_date} to {end_date}..."):
-                        print(f"DEBUG App: About to query storage from {utc_start} to {utc_end}")
                         raw_messages = run_async(storage.get_raw_messages(
                             start_time=utc_start,
                             end_time=utc_end
                         ))
-                        print(f"DEBUG App: Storage returned {len(raw_messages) if raw_messages else 0} messages")
                     
                     st.caption(f"Query range: {utc_start} UTC to {utc_end} UTC")
                     
