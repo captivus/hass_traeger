@@ -7,17 +7,15 @@ from pydantic import BaseModel, Field
 
 
 class GrillState(Enum):
-    """Grill operational states."""
-    OFFLINE = 0
-    IDLE = 1
-    STARTUP = 2
-    PREHEATING = 3
-    IGNITING = 4
-    SMOKING = 5
-    GRILLING = 6
-    COOLING = 7
-    SHUTDOWN = 8
-    ERROR = 9
+    """Grill operational states based on system_status values from the grill."""
+    OFFLINE = 0      # Grill is offline/disconnected
+    IDLE = 1         # Grill is idle/asleep (system_status = 2)
+    PREHEATING = 2   # Grill is preheating (system_status = 3, rare)
+    IGNITING = 3     # Grill is igniting (system_status = 5)
+    GRILLING = 4     # Grill is heating/running (system_status = 6)
+    COOLING = 5      # Grill is cooling down (system_status = 8)
+    SHUTDOWN = 6     # Grill is shutting down (system_status = 9)
+    ERROR = 7        # Error state or unknown system_status
 
 
 class ProbeData(BaseModel):

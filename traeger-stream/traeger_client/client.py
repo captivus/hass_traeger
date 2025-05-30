@@ -262,17 +262,22 @@ class TraegerClient:
                 friendly_name = grill.get("friendlyName", thing_name)
                 break
                 
-        # Map state
+        # Map state based on actual data from the grill
+        # Based on analysis of raw_messages table:
+        # 2 = OFF/IDLE (60.86% of messages)
+        # 3 = Unknown state (0.72%)
+        # 5 = IGNITING (0.18%)
+        # 6 = HEATING/RUNNING (34.43%)
+        # 8 = COOLING (3.76%)
+        # 9 = SHUTDOWN (0.06%)
         state_map = {
             0: GrillState.OFFLINE,
-            1: GrillState.IDLE,
-            2: GrillState.STARTUP,
-            3: GrillState.PREHEATING,
-            4: GrillState.IGNITING,
-            5: GrillState.SMOKING,
-            6: GrillState.GRILLING,
-            7: GrillState.COOLING,
-            8: GrillState.SHUTDOWN,
+            2: GrillState.IDLE,      # OFF/IDLE state
+            3: GrillState.PREHEATING,  # Rare state, possibly preheating
+            5: GrillState.IGNITING,  # IGNITING
+            6: GrillState.GRILLING,  # HEATING/RUNNING - normal cooking
+            8: GrillState.COOLING,   # COOLING DOWN
+            9: GrillState.SHUTDOWN,  # SHUTDOWN
         }
         state = state_map.get(status_data.get("system_status", 0), GrillState.ERROR)
         
