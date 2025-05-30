@@ -52,7 +52,7 @@ class StreamBuffer:
                 record = {
                     "timestamp": timestamp,
                     "grill_temp": status.grill_temperature,
-                    "grill_set": status.grill_set_temperature,
+                    "grill_set": status.set_temperature,
                     "ambient": status.ambient_temperature,
                     "fan_speed": status.fan_speed,
                     "state": status.state.name,

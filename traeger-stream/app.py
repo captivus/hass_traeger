@@ -172,13 +172,8 @@ async def load_historical_data_to_buffer(storage, stream, thing_name: str, hours
                 historical_data.append((timestamp, status))
                 
                 # Add historical probe temperatures to predictor
-                for probe in status.probes:
-                    if probe.temperature is not None:
-                        st.session_state.client.predictor.add_reading(
-                            probe.id, 
-                            probe.temperature,
-                            timestamp.timestamp()
-                        )
+                # Skip for XGBoost predictor as it only uses current cook data
+                # Historical data is handled separately
         except Exception as e:
             logger.error(f"Error parsing historical message: {e}")
             continue
@@ -409,7 +404,7 @@ def main():
                         st.metric(
                             "Grill Temp",
                             f"{current.grill_temperature or '--'}°F",
-                            delta=f"Set: {current.grill_set_temperature or '--'}°F"
+                            delta=f"Set: {current.set_temperature or '--'}°F"
                         )
                     
                     # Display only active probes (those with temperature data)

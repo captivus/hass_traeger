@@ -45,8 +45,11 @@ class GrillStatus(BaseModel):
     
     # Temperatures
     grill_temperature: Optional[float] = None
-    grill_set_temperature: Optional[float] = None
+    set_temperature: Optional[float] = None
     ambient_temperature: Optional[float] = None
+    
+    # Cook session
+    cook_id: Optional[str] = None
     
     # Probes
     probes: List[ProbeData] = Field(default_factory=list)

@@ -70,6 +70,38 @@ class DataStorage:
                 """)
                 logger.info("state_index column added and populated")
             
+            # Create ML prediction data table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS ml_prediction_data (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,  -- UTC timestamp
+                    grill_id TEXT NOT NULL,
+                    cook_id TEXT NOT NULL,
+                    probe_id TEXT NOT NULL,
+                    -- Features
+                    probe_temp REAL,
+                    probe_target REAL,
+                    grill_temp REAL,
+                    grill_set REAL,
+                    ambient_temp REAL,
+                    minutes_elapsed REAL,
+                    grill_probe_diff REAL,
+                    probe_target_diff REAL,
+                    probe_rate REAL,
+                    -- Prediction
+                    predicted_minutes REAL,
+                    prediction_timestamp TEXT,  -- UTC timestamp
+                    model_version TEXT,
+                    -- Ground truth (updated when target reached)
+                    actual_minutes REAL,
+                    target_reached_timestamp TEXT  -- UTC timestamp
+                )
+            """)
+            
+            # Create indexes for ML table
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_ml_prediction_cook ON ml_prediction_data(cook_id, probe_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_ml_prediction_timestamp ON ml_prediction_data(timestamp)")
+            
             conn.commit()
     
     def _load_existing_state_indexes(self):
@@ -224,6 +256,113 @@ class DataStorage:
             print(f"DEBUG Storage: Query returned {len(results)} records")
             logger.info(f"Storage query returned {len(results)} records. Query: {query}, Params: {params}")
             return results
+    
+    async def save_ml_data_point(self, data: Dict[str, Any]) -> None:
+        """Save ML feature data point to database.
+        
+        Args:
+            data: Dictionary containing all feature data and predictions
+        """
+        async with self._lock:
+            await asyncio.to_thread(self._save_ml_data_point_sync, data)
+    
+    def _save_ml_data_point_sync(self, data: Dict[str, Any]) -> None:
+        """Synchronous method to save ML data point."""
+        with self._sync_lock:
+            try:
+                with sqlite3.connect(self.db_path) as conn:
+                    conn.execute("""
+                        INSERT INTO ml_prediction_data (
+                            timestamp, grill_id, cook_id, probe_id,
+                            probe_temp, probe_target, grill_temp, grill_set,
+                            ambient_temp, minutes_elapsed, grill_probe_diff,
+                            probe_target_diff, probe_rate,
+                            predicted_minutes, prediction_timestamp, model_version
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        data['timestamp'],
+                        data['grill_id'],
+                        data['cook_id'],
+                        data['probe_id'],
+                        data['probe_temp'],
+                        data['probe_target'],
+                        data['grill_temp'],
+                        data['grill_set'],
+                        data['ambient_temp'],
+                        data.get('minutes_elapsed', 0),
+                        data.get('grill_probe_diff', 0),
+                        data.get('probe_target_diff', 0),
+                        data.get('probe_rate', 0),
+                        data.get('predicted_minutes'),
+                        data.get('prediction_timestamp'),
+                        data.get('model_version', '1.0')
+                    ))
+                    conn.commit()
+            except Exception as e:
+                logger.error(f"Failed to save ML data point: {e}")
+    
+    async def get_ml_data_for_cook(self, cook_id: str, probe_id: str) -> List[Dict[str, Any]]:
+        """Get ML data points for a specific cook and probe.
+        
+        Args:
+            cook_id: Cook session ID
+            probe_id: Probe identifier
+            
+        Returns:
+            List of ML data points ordered by timestamp
+        """
+        async with self._lock:
+            return await asyncio.to_thread(self._get_ml_data_for_cook_sync, cook_id, probe_id)
+    
+    def _get_ml_data_for_cook_sync(self, cook_id: str, probe_id: str) -> List[Dict[str, Any]]:
+        """Synchronous method to get ML data."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute("""
+                SELECT * FROM ml_prediction_data
+                WHERE cook_id = ? AND probe_id = ?
+                ORDER BY timestamp ASC
+            """, (cook_id, probe_id))
+            return [dict(row) for row in cursor.fetchall()]
+    
+    async def update_ml_ground_truth(self, cook_id: str, probe_id: str, 
+                                   actual_minutes: float, target_reached_timestamp: str) -> None:
+        """Update ML predictions with ground truth when target is reached.
+        
+        Args:
+            cook_id: Cook session ID
+            probe_id: Probe identifier
+            actual_minutes: Actual minutes it took to reach target
+            target_reached_timestamp: UTC timestamp when target was reached
+        """
+        async with self._lock:
+            await asyncio.to_thread(
+                self._update_ml_ground_truth_sync, 
+                cook_id, probe_id, actual_minutes, target_reached_timestamp
+            )
+    
+    def _update_ml_ground_truth_sync(self, cook_id: str, probe_id: str,
+                                    actual_minutes: float, target_reached_timestamp: str) -> None:
+        """Synchronous method to update ground truth."""
+        with self._sync_lock:
+            try:
+                with sqlite3.connect(self.db_path) as conn:
+                    # Update all predictions for this cook/probe with actual time
+                    conn.execute("""
+                        UPDATE ml_prediction_data
+                        SET actual_minutes = ?,
+                            target_reached_timestamp = ?
+                        WHERE cook_id = ? AND probe_id = ?
+                        AND actual_minutes IS NULL
+                    """, (actual_minutes, target_reached_timestamp, cook_id, probe_id))
+                    
+                    updated = conn.total_changes
+                    conn.commit()
+                    
+                    if updated > 0:
+                        logger.info(f"Updated {updated} ML predictions with ground truth for cook {cook_id}, probe {probe_id}")
+            except Exception as e:
+                logger.error(f"Failed to update ML ground truth: {e}")
     
     async def export_to_csv(
         self,

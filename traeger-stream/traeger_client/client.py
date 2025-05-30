@@ -15,7 +15,7 @@ import ssl
 
 from .models import GrillStatus, ProbeData, GrillState, GrillCommand
 from .storage import DataStorage
-from .simple_temperature_predictor import SimpleTemperaturePredictor
+from .xgboost_temperature_predictor import XGBoostTemperaturePredictor
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ class TraegerClient:
             logger.info(f"Storage enabled with database: {self.storage.db_path}")
             
         # Temperature predictor
-        self.predictor = SimpleTemperaturePredictor()
+        self.predictor = XGBoostTemperaturePredictor(storage=self.storage if enable_storage else None)
             
         
     async def connect(self):
@@ -281,6 +281,7 @@ class TraegerClient:
         grill_temp = status_data.get("grill", 0)
         grill_set_temp = status_data.get("set", 0)
         ambient_temp = status_data.get("ambient", 70)
+        cook_id = status_data.get("cook_id", "")
         
         for acc in status_data.get("acc", []):
             probe_type = acc.get("type")
@@ -300,11 +301,12 @@ class TraegerClient:
                 prediction_message = None
                 temp_rate = None
                 temp_acceleration = None
-                if current_temp is not None and target_temp is not None:
-                    # Add temperature reading to predictor
-                    self.predictor.add_reading(probe_id, current_temp)
+                if current_temp is not None and target_temp is not None and target_temp > 0:
                     # Get prediction
-                    predicted_time, prediction_message, temp_rate, temp_acceleration = self.predictor.predict_time_to_target(probe_id, target_temp)
+                    predicted_time, prediction_message, temp_rate, temp_acceleration = self.predictor.predict_time_to_target(
+                        thing_name, cook_id, probe_id, current_temp, target_temp, 
+                        grill_temp, grill_set_temp, ambient_temp
+                    )
                 
                 probe = ProbeData(
                     id=probe_id,
@@ -337,11 +339,12 @@ class TraegerClient:
                 prediction_message = None
                 temp_rate = None
                 temp_acceleration = None
-                if current_temp is not None and target_temp is not None:
-                    # Add temperature reading to predictor
-                    self.predictor.add_reading(probe_id, current_temp)
+                if current_temp is not None and target_temp is not None and target_temp > 0:
                     # Get prediction
-                    predicted_time, prediction_message, temp_rate, temp_acceleration = self.predictor.predict_time_to_target(probe_id, target_temp)
+                    predicted_time, prediction_message, temp_rate, temp_acceleration = self.predictor.predict_time_to_target(
+                        thing_name, cook_id, probe_id, current_temp, target_temp, 
+                        grill_temp, grill_set_temp, ambient_temp
+                    )
                 
                 probe = ProbeData(
                     id=probe_id,
@@ -369,8 +372,9 @@ class TraegerClient:
             connected=status_data.get("connected", False),
             state=state,
             grill_temperature=status_data.get("grill"),
-            grill_set_temperature=status_data.get("set"),
+            set_temperature=status_data.get("set"),
             ambient_temperature=status_data.get("ambient"),
+            cook_id=cook_id,
             probes=probes,
             fan_speed=status_data.get("fan_speed"),
             pellet_level=status_data.get("pellet_level"),
@@ -389,13 +393,14 @@ class TraegerClient:
             temp_rate = None
             temp_acceleration = None
             
-            if probe.temperature is not None and probe.target_temperature is not None:
-                # Always add current temperature to ensure predictor has latest data
-                self.predictor.add_reading(probe.id, probe.temperature)
-                
-                # Get prediction
+            if probe.temperature is not None and probe.target_temperature is not None and probe.target_temperature > 0:
+                # Get prediction - need to get cook_id from status somehow
+                # For now, use grill ID as cook_id fallback
+                cook_id = status.cook_id or status.thing_name
                 predicted_time, prediction_message, temp_rate, temp_acceleration = self.predictor.predict_time_to_target(
-                    probe.id, probe.target_temperature
+                    status.thing_name, cook_id, probe.id, 
+                    probe.temperature, probe.target_temperature,
+                    status.grill_temperature, status.set_temperature, status.ambient_temperature
                 )
             
             # Create new probe with updated predictions
@@ -422,8 +427,9 @@ class TraegerClient:
             connected=status.connected,
             state=status.state,
             grill_temperature=status.grill_temperature,
-            grill_set_temperature=status.grill_set_temperature,
+            set_temperature=status.set_temperature,
             ambient_temperature=status.ambient_temperature,
+            cook_id=status.cook_id,
             probes=updated_probes,
             fan_speed=status.fan_speed,
             pellet_level=status.pellet_level,
