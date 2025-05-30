@@ -208,10 +208,14 @@ class TraegerClient:
         logger.info(f"MQTT connected: {rc}")
         self._mqtt_connected = True
         
+        # Unsubscribe from all topics first to prevent duplicates
+        client.unsubscribe("#")
+        
         # Subscribe to all grills
         for grill in self.grills:
             topic = f"prod/thing/update/{grill['thingName']}"
             client.subscribe(topic)
+            logger.info(f"Subscribed to topic: {topic}")
             
     def _on_mqtt_disconnect(self, client, userdata, rc):
         """Handle MQTT disconnection."""
@@ -279,11 +283,17 @@ class TraegerClient:
         ambient_temp = status_data.get("ambient", 70)
         
         for acc in status_data.get("acc", []):
-            if acc.get("type") == "btprobe":
-                btprobe_data = acc.get("btprobe", {})
-                current_temp = btprobe_data.get("get_temp")
-                target_temp = btprobe_data.get("set_temp")
-                probe_id = acc["uuid"]
+            probe_type = acc.get("type")
+            probe_id = acc.get("uuid", "")
+            
+            # Handle both wired probes and Bluetooth probes
+            if probe_type == "probe":
+                # Wired probe
+                probe_data = acc.get("probe", {})
+                current_temp = probe_data.get("get_temp")
+                target_temp = probe_data.get("set_temp")
+                channel = acc.get("channel", "")
+                probe_name = f"Wired {channel.upper()}" if channel else f"Wired Probe {len(probes) + 1}"
                 
                 # Get prediction if temperatures are available
                 predicted_time = None
@@ -298,7 +308,44 @@ class TraegerClient:
                 
                 probe = ProbeData(
                     id=probe_id,
-                    name=acc.get("channel", f"Probe {len(probes) + 1}"),
+                    name=probe_name,
+                    temperature=current_temp,
+                    target_temperature=target_temp,
+                    is_connected=acc.get("con", False) == 1,
+                    alarm_fired=probe_data.get("alarm_fired", 0) == 1,
+                    battery_level=None,  # Wired probes don't have battery
+                    ambient_temp=None,
+                    predicted_time_to_target=predicted_time,
+                    prediction_message=prediction_message,
+                    temperature_rate=temp_rate,
+                    temperature_acceleration=temp_acceleration
+                )
+                if predicted_time is not None:
+                    print(f"DEBUG CLIENT: Probe {probe_id} has prediction: {predicted_time} minutes")
+                else:
+                    print(f"DEBUG CLIENT: Probe {probe_id} has NO prediction: {prediction_message}")
+                probes.append(probe)
+                
+            elif probe_type == "btprobe":
+                # Bluetooth probe
+                btprobe_data = acc.get("btprobe", {})
+                current_temp = btprobe_data.get("get_temp")
+                target_temp = btprobe_data.get("set_temp")
+                
+                # Get prediction if temperatures are available
+                predicted_time = None
+                prediction_message = None
+                temp_rate = None
+                temp_acceleration = None
+                if current_temp is not None and target_temp is not None:
+                    # Add temperature reading to predictor
+                    self.predictor.add_reading(probe_id, current_temp)
+                    # Get prediction
+                    predicted_time, prediction_message, temp_rate, temp_acceleration = self.predictor.predict_time_to_target(probe_id, target_temp)
+                
+                probe = ProbeData(
+                    id=probe_id,
+                    name=f"BT Probe {len(probes) + 1}",
                     temperature=current_temp,
                     target_temperature=target_temp,
                     is_connected=acc.get("con", False) == 1,
