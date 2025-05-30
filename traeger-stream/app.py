@@ -346,33 +346,6 @@ def main():
                             del st.session_state[hist_key]
                 st.rerun()
             
-            # Data Storage
-            st.divider()
-            st.subheader("Data Storage")
-            
-            if st.session_state.client and st.session_state.client.storage:
-                storage = st.session_state.client.storage
-                
-                # Show database path
-                st.info(f"📁 Database: {storage.db_path}")
-                
-                # Show storage stats
-                if st.session_state.selected_grill:
-                    # Get latest raw message
-                    raw_messages = run_async(storage.get_raw_messages(limit=1))
-                    if raw_messages:
-                        # Convert UTC timestamp to local time
-                        utc_time = pd.to_datetime(raw_messages[0]['timestamp']).tz_localize('UTC')
-                        local_time = utc_time.tz_convert(TIMEZONE)
-                        st.caption(f"Latest data: {local_time.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-                    
-                    # Count all raw messages
-                    all_messages = run_async(storage.get_raw_messages())
-                    st.caption(f"Records: {len(all_messages)} data points")
-                    st.caption(f"Timezone: {TIMEZONE}")
-            else:
-                st.warning("Data storage is disabled")
-            
         else:
             st.error("❌ Disconnected")
             if st.button("Reconnect", type="primary"):
