@@ -289,6 +289,7 @@ def main():
         # Connection status
         if st.session_state.connected:
             st.success("✅ Connected")
+            st.info("🔄 Refreshes every 30 seconds")
             
             # Grill selector
             if st.session_state.client:
@@ -309,10 +310,6 @@ def main():
                                 del st.session_state[old_key]
                         st.session_state.selected_grill = new_grill
                     
-            # Refresh interval
-            refresh_rate = st.slider("Refresh Rate (seconds)", 1, 10, 2)
-            st.session_state.refresh_rate = refresh_rate
-            
             # Historical data period for live view
             st.divider()
             st.subheader("Live View Settings")
@@ -395,7 +392,7 @@ def main():
                     st.rerun()
             
             # Use fragment for auto-refreshing live monitor
-            @st.fragment(run_every=st.session_state.get('refresh_rate', 2) if st.session_state.get('refresh_rate', 0) > 0 else None)
+            @st.fragment(run_every=30)
             def live_monitor_fragment():
                 # Get buffer inside fragment
                 buffer = st.session_state.stream.get_buffer()
