@@ -496,7 +496,23 @@ def main():
                 with col2:
                     end_date = st.date_input("End Date", value=datetime.now().date())
                 
-                if st.button("Load Historical Data"):
+                # Create two columns for buttons
+                col_load, col_download = st.columns(2)
+                
+                with col_load:
+                    load_button = st.button("Load Historical Data")
+                
+                with col_download:
+                    # Show download button if data exists in session state
+                    if hasattr(st.session_state, 'historical_csv') and st.session_state.historical_csv:
+                        st.download_button(
+                            label="Download CSV",
+                            data=st.session_state.historical_csv,
+                            file_name=f"traeger_data_{st.session_state.historical_dates[0]}_{st.session_state.historical_dates[1]}.csv",
+                            mime="text/csv"
+                        )
+                
+                if load_button:
                     # Convert dates to datetime in local timezone
                     local_tz = pytz.timezone(TIMEZONE)
                     start_datetime = local_tz.localize(datetime.combine(start_date, datetime.min.time()))
@@ -561,45 +577,46 @@ def main():
                             df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_localize('UTC').dt.tz_convert(TIMEZONE)
                             df = df.sort_values('timestamp')
                             
-                            # Create historical chart
-                            fig = create_temperature_chart(df)
-                            st.plotly_chart(fig, use_container_width=True)
-                            
-                            
-                            # Show statistics
-                            st.subheader("Statistics")
-                            col1, col2, col3, col4 = st.columns(4)
-                            
-                            with col1:
-                                st.metric("Records", len(df))
-                            with col2:
-                                if 'grill_temp' in df.columns and not df['grill_temp'].isna().all():
-                                    st.metric("Avg Grill Temp", f"{df['grill_temp'].mean():.1f}°F")
-                                else:
-                                    st.metric("Avg Grill Temp", "--")
-                            with col3:
-                                if 'grill_temp' in df.columns and not df['grill_temp'].isna().all():
-                                    st.metric("Max Grill Temp", f"{df['grill_temp'].max():.1f}°F")
-                                else:
-                                    st.metric("Max Grill Temp", "--")
-                            with col4:
-                                if 'grill_temp' in df.columns and not df['grill_temp'].isna().all():
-                                    st.metric("Min Grill Temp", f"{df['grill_temp'].min():.1f}°F")
-                                else:
-                                    st.metric("Min Grill Temp", "--")
-                            
-                            # Download data
-                            csv = df.to_csv(index=False)
-                            st.download_button(
-                                label="Download CSV",
-                                data=csv,
-                                file_name=f"traeger_data_{start_date}_{end_date}.csv",
-                                mime="text/csv"
-                            )
+                            # Store data in session state for download button
+                            st.session_state.historical_df = df
+                            st.session_state.historical_csv = df.to_csv(index=False)
+                            st.session_state.historical_dates = (start_date, end_date)
+                            st.rerun()
                         else:
                             st.info("No valid data found in the selected date range")
                     else:
                         st.info("No data found for the selected date range")
+                
+                # Display data if it exists in session state (outside button handler)
+                if hasattr(st.session_state, 'historical_df') and st.session_state.historical_df is not None:
+                    df = st.session_state.historical_df
+                    
+                    # Create historical chart
+                    fig = create_temperature_chart(df)
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Show statistics
+                    st.subheader("Statistics")
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("Records", len(df))
+                    with col2:
+                        if 'grill_temp' in df.columns and not df['grill_temp'].isna().all():
+                            st.metric("Avg Grill Temp", f"{df['grill_temp'].mean():.1f}°F")
+                        else:
+                            st.metric("Avg Grill Temp", "--")
+                    with col3:
+                        if 'grill_temp' in df.columns and not df['grill_temp'].isna().all():
+                            st.metric("Max Grill Temp", f"{df['grill_temp'].max():.1f}°F")
+                        else:
+                            st.metric("Max Grill Temp", "--")
+                    with col4:
+                        if 'grill_temp' in df.columns and not df['grill_temp'].isna().all():
+                            st.metric("Min Grill Temp", f"{df['grill_temp'].min():.1f}°F")
+                        else:
+                            st.metric("Min Grill Temp", "--")
+                
             else:
                 st.warning("Data storage is not available")
         
