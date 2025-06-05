@@ -67,6 +67,10 @@ if "historical_loaded" not in st.session_state:
 
 async def connect_to_traeger():
     """Connect to Traeger services."""
+    # Check if already connected
+    if st.session_state.connected and st.session_state.client:
+        return True
+        
     username = os.getenv("TRAEGER_USERNAME")
     password = os.getenv("TRAEGER_PASSWORD")
     
@@ -356,8 +360,8 @@ def main():
                         st.session_state.selected_grill,
                         hours=st.session_state.get('historical_hours', 24)
                     ))
+                    # Set the flag after loading
                     st.session_state[hist_key] = True
-                    st.rerun()
             
             # Use fragment for auto-refreshing live monitor
             @st.fragment(run_every=30)

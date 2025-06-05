@@ -88,6 +88,9 @@ class XGBoostTemperaturePredictor:
         if self.storage:
             import asyncio
             try:
+                # Try to get the current event loop
+                loop = asyncio.get_running_loop()
+                # Schedule the coroutine to run
                 asyncio.create_task(self.storage.save_ml_data_point(data_point))
             except RuntimeError:
                 # Not in async context, save synchronously

@@ -22,7 +22,7 @@ class DataStorage:
         """
         self.db_path = db_path or Path("./data/traeger_data.db")
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._lock = asyncio.Lock()
+        self._lock = None  # Will be created when needed
         self._sync_lock = threading.Lock()
         self._seen_state_indexes: Set[tuple] = set()  # Cache of (topic, state_index) pairs
         self._init_db()
@@ -114,6 +114,32 @@ class DataStorage:
                 self._seen_state_indexes.add((row[0], row[1]))
             logger.info(f"Loaded {len(self._seen_state_indexes)} existing state indexes into cache")
     
+    def _get_lock(self):
+        """Get or create the async lock for the current event loop."""
+        try:
+            # Try to get the current event loop
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # No event loop running
+            return None
+            
+        # Create new lock if needed or if bound to different loop
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        else:
+            # Check if the lock is bound to the current event loop
+            try:
+                # Try to access the lock's loop
+                lock_loop = self._lock._loop
+                if lock_loop is not loop:
+                    # Lock is bound to a different event loop, create a new one
+                    self._lock = asyncio.Lock()
+            except AttributeError:
+                # If we can't access the loop, create a new lock to be safe
+                self._lock = asyncio.Lock()
+        
+        return self._lock
+    
     async def save_raw_message(self, topic: str, payload: str) -> None:
         """Save a raw MQTT message.
         
@@ -121,7 +147,12 @@ class DataStorage:
             topic: MQTT topic
             payload: Raw message payload
         """
-        async with self._lock:
+        lock = self._get_lock()
+        if lock is None:
+            # No async context, use sync method directly
+            self._save_raw_message_sync(topic, payload)
+            return
+        async with lock:
             await asyncio.to_thread(self._save_raw_message_sync, topic, payload)
     
     def _save_raw_message_sync(self, topic: str, payload: str) -> None:
@@ -214,7 +245,10 @@ class DataStorage:
         Returns:
             List of raw message records
         """
-        async with self._lock:
+        lock = self._get_lock()
+        if lock is None:
+            raise RuntimeError("No event loop available")
+        async with lock:
             return await asyncio.to_thread(self._get_raw_messages_sync, limit, start_time, end_time, topic)
     
     def _get_raw_messages_sync(
@@ -263,7 +297,10 @@ class DataStorage:
         Args:
             data: Dictionary containing all feature data and predictions
         """
-        async with self._lock:
+        lock = self._get_lock()
+        if lock is None:
+            raise RuntimeError("No event loop available")
+        async with lock:
             await asyncio.to_thread(self._save_ml_data_point_sync, data)
     
     def _save_ml_data_point_sync(self, data: Dict[str, Any]) -> None:
@@ -311,7 +348,10 @@ class DataStorage:
         Returns:
             List of ML data points ordered by timestamp
         """
-        async with self._lock:
+        lock = self._get_lock()
+        if lock is None:
+            raise RuntimeError("No event loop available")
+        async with lock:
             return await asyncio.to_thread(self._get_ml_data_for_cook_sync, cook_id, probe_id)
     
     def _get_ml_data_for_cook_sync(self, cook_id: str, probe_id: str) -> List[Dict[str, Any]]:
@@ -335,7 +375,10 @@ class DataStorage:
             actual_minutes: Actual minutes it took to reach target
             target_reached_timestamp: UTC timestamp when target was reached
         """
-        async with self._lock:
+        lock = self._get_lock()
+        if lock is None:
+            raise RuntimeError("No event loop available")
+        async with lock:
             await asyncio.to_thread(
                 self._update_ml_ground_truth_sync, 
                 cook_id, probe_id, actual_minutes, target_reached_timestamp
