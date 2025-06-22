@@ -12,6 +12,10 @@ npm install -g \
     typescript \
     ts-node
 
+# Install Claude Code CLI
+echo "Installing Claude Code..."
+npm install -g @anthropic-ai/claude-code
+
 # Create useful aliases
 cat >> /home/vscode/.zshrc << 'EOF'
 # Claude Code aliases
@@ -31,29 +35,14 @@ alias uvs='uv sync'
 alias rm='rm -i'
 alias cp='cp -i'
 alias mv='mv -i'
+
+# Claude Code alias
+alias cc='claude'
 EOF
 
-# Set up MCP configuration directory
-mkdir -p /home/vscode/.config/claude
-chown -R vscode:vscode /home/vscode/.config
-
-# Create MCP configuration
-cat > /home/vscode/.config/claude/config.json << 'EOF'
-{
-  "mcpServers": {
-    "puppeteer": {
-      "command": "node",
-      "args": ["/usr/lib/node_modules/@modelcontextprotocol/server-puppeteer/dist/index.js"],
-      "env": {
-        "PUPPETEER_EXECUTABLE_PATH": "/usr/bin/google-chrome-stable"
-      }
-    }
-  }
-}
-EOF
-
-# Set proper permissions
-chown vscode:vscode /home/vscode/.config/claude/config.json
+# Add Puppeteer MCP server to Claude Code
+echo "Adding Puppeteer MCP server to Claude Code..."
+su - vscode -c "claude mcp add puppeteer -s user -- npx -y @modelcontextprotocol/server-puppeteer" || true
 
 # Test Chrome installation
 echo "Testing Chrome installation..."

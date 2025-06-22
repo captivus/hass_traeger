@@ -4,6 +4,7 @@ This container is configured for Claude Code to work in "YOLO mode" with full de
 
 ## Features
 
+- **Claude Code**: AI coding assistant pre-installed (`claude` or `cc` command)
 - **MCP Puppeteer Server**: Pre-configured for web automation
 - **Chrome Browser**: Installed for headless/headful browser automation
 - **Python with UV**: Modern Python package management
@@ -18,9 +19,66 @@ This container is configured for Claude Code to work in "YOLO mode" with full de
 3. Press `Ctrl+Shift+P` and select "Dev Containers: Reopen in Container"
 4. Wait for container to build (first time takes ~5 minutes)
 
+## Claude Code Setup
+
+After the container starts, choose one authentication method:
+
+### Option 1: Claude Account Login (Recommended for Claude Pro/Team)
+1. Run: `claude login`
+2. Follow the prompts to authenticate with your Claude account
+3. Run Claude Code: `claude` or `cc` (alias)
+
+### Option 2: API Key
+1. Set your Anthropic API key: `export ANTHROPIC_API_KEY="your-api-key"`
+2. Run Claude Code: `claude` or `cc` (alias)
+
+Claude Code will have full access to the workspace with pre-approved commands
+
+## Running Claude Code Without Confirmations
+
+To have Claude Code execute commands without asking for permission each time:
+
+### Option 1: Skip All Permissions (Use with Caution)
+```bash
+# Skip all permission prompts
+claude --dangerously-skip-permissions
+# or
+cc --dangerously-skip-permissions
+
+# With an initial task
+claude --dangerously-skip-permissions "implement the missing prediction features"
+```
+
+### Option 2: Pre-approve Specific Tools
+```bash
+# Allow specific tools without prompts
+claude --allowedTools bash,read,write,edit
+
+# Combine with skip permissions for full automation
+claude --dangerously-skip-permissions --allowedTools bash,read,write,edit
+```
+
+### Interactive Mode Features:
+- Use `Ctrl+L` to clear screen
+- Use Up/Down arrows for command history
+- Use `Ctrl+C` to cancel current operation
+- Use `Ctrl+D` to exit
+
+**Note**: The `--dangerously-skip-permissions` flag is safe in this container since all changes are isolated and your work is persisted through bind mounts
+
 ## MCP Configuration
 
-The Puppeteer MCP server is automatically configured and ready to use. Claude Code can access it via the standard MCP interface.
+The Puppeteer MCP server is automatically added during container setup using:
+```bash
+claude mcp add puppeteer -s user -- npx -y @modelcontextprotocol/server-puppeteer
+```
+
+To verify MCP servers are available:
+```bash
+claude mcp list
+```
+
+Or in Claude Code, type `/mcp` to see available servers.
 
 ## Pre-approved Commands
 
