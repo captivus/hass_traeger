@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Traeger Monitor</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>=% Traeger Monitor</h1>
+            <div id="status" class="status">Connecting...</div>
+        </header>
+
+        <div class="current-temps">
+            <div class="temp-card">
+                <h3>Grill</h3>
+                <div class="temp" id="grill-temp">--</div>
+                <div class="target">Target: <span id="grill-set">--</span>°F</div>
+            </div>
+            <div class="temp-card">
+                <h3>Probe</h3>
+                <div class="temp" id="probe-temp">--</div>
+                <div class="target">Target: <span id="probe-set">--</span>°F</div>
+            </div>
+            <div class="temp-card">
+                <h3>Ambient</h3>
+                <div class="temp" id="ambient-temp">--</div>
+                <div class="target">Pellets: <span id="pellet-level">--</span>%</div>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <div id="temp-chart"></div>
+        </div>
+
+        <div class="controls">
+            <label>History: 
+                <select id="history-hours" onchange="updateHistory()">
+                    <option value="1">1 hour</option>
+                    <option value="6">6 hours</option>
+                    <option value="24" selected>24 hours</option>
+                    <option value="48">48 hours</option>
+                </select>
+            </label>
+            <span id="last-update">Last update: Never</span>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
