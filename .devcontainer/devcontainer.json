@@ -39,7 +39,9 @@
   "forwardPorts": [3000, 8080, 5000, 9222],
   "containerEnv": {
     "PUPPETEER_SKIP_CHROMIUM_DOWNLOAD": "false",
-    "PUPPETEER_EXECUTABLE_PATH": "/usr/bin/google-chrome-stable"
+    "PUPPETEER_EXECUTABLE_PATH": "/usr/bin/google-chrome-stable",
+    "UV_CACHE_DIR": "/home/vscode/.cache/uv",
+    "UV_PROJECT_ENVIRONMENT": "/home/vscode/.cache/uv/env"
   },
   "remoteEnv": {
     "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY:}"

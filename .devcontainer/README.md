@@ -7,7 +7,7 @@ This container is configured for Claude Code to work in "YOLO mode" with full de
 - **Claude Code**: AI coding assistant pre-installed (`claude` or `cc` command)
 - **MCP Puppeteer Server**: Pre-configured for web automation
 - **Chrome Browser**: Installed for headless/headful browser automation
-- **Python with UV**: Modern Python package management
+- **Python with UV**: Modern Python package management with proper cache permissions
 - **Node.js 20**: For JavaScript/TypeScript development
 - **Docker-in-Docker**: Container operations support
 - **Development Tools**: git, ripgrep, fzf, and more

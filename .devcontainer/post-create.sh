@@ -38,7 +38,17 @@ alias mv='mv -i'
 
 # Claude Code alias
 alias cc='claude'
+
+# UV environment variables
+export UV_CACHE_DIR="/home/vscode/.cache/uv"
+export UV_PROJECT_ENVIRONMENT="/home/vscode/.cache/uv/env"
 EOF
+
+# Fix UV cache permissions for vscode user
+echo "Setting up UV cache and permissions..."
+mkdir -p /home/vscode/.cache/uv
+chown -R vscode:vscode /home/vscode/.cache
+chmod -R 755 /home/vscode/.cache
 
 # Add Puppeteer MCP server to Claude Code
 echo "Adding Puppeteer MCP server to Claude Code..."
