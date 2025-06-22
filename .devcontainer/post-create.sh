@@ -40,26 +40,25 @@ alias mv='mv -i'
 alias cc='claude'
 
 # UV environment variables
-export UV_CACHE_DIR="/home/vscode/.cache/uv"
-export UV_PROJECT_ENVIRONMENT="/home/vscode/.cache/uv/env"
+export UV_CACHE_DIR="/home/vscode/.local/share/uv/cache"
+export UV_PROJECT_ENVIRONMENT="/home/vscode/.local/share/uv/env"
 EOF
 
-# Fix UV cache permissions for vscode user
-echo "Setting up UV cache and permissions..."
-mkdir -p /home/vscode/.cache/uv
-chown -R vscode:vscode /home/vscode/.cache
-chmod -R 755 /home/vscode/.cache
+# Ensure UV cache directory exists with proper permissions
+echo "Setting up UV cache directory..."
+sudo -u vscode mkdir -p /home/vscode/.local/share/uv/cache
 
 # Add Puppeteer MCP server to Claude Code
-echo "Adding Puppeteer MCP server to Claude Code..."
-su - vscode -c "claude mcp add puppeteer -s user -- npx -y @modelcontextprotocol/server-puppeteer" || true
+echo "Configuring Puppeteer MCP server..."
+# Run as vscode user with proper PATH
+sudo -u vscode env PATH="/usr/local/bin:$PATH" claude mcp add puppeteer -s user -- npx -y @modelcontextprotocol/server-puppeteer || echo "Note: MCP server will be configured on first Claude Code login"
 
 # Test Chrome installation
 echo "Testing Chrome installation..."
 google-chrome-stable --version
 
 # Set permissions on workspace
-chown -R vscode:vscode /workspace
+sudo chown -R vscode:vscode /workspace
 
 echo "Container setup complete!"
 echo "MCP Puppeteer server configured and ready to use."

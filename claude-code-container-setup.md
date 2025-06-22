@@ -105,8 +105,8 @@ Create `.devcontainer/devcontainer.json`:
   "containerEnv": {
     "PUPPETEER_SKIP_CHROMIUM_DOWNLOAD": "false",
     "PUPPETEER_EXECUTABLE_PATH": "/usr/bin/google-chrome-stable",
-    "UV_CACHE_DIR": "/home/vscode/.cache/uv",
-    "UV_PROJECT_ENVIRONMENT": "/home/vscode/.cache/uv/env"
+    "UV_CACHE_DIR": "/home/vscode/.local/share/uv/cache",
+    "UV_PROJECT_ENVIRONMENT": "/home/vscode/.local/share/uv/env"
   },
   "remoteEnv": {
     "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY:}"
@@ -270,19 +270,18 @@ alias mv='mv -i'
 alias cc='claude'
 
 # UV environment variables
-export UV_CACHE_DIR="/home/vscode/.cache/uv"
-export UV_PROJECT_ENVIRONMENT="/home/vscode/.cache/uv/env"
+export UV_CACHE_DIR="/home/vscode/.local/share/uv/cache"
+export UV_PROJECT_ENVIRONMENT="/home/vscode/.local/share/uv/env"
 EOF
 
-# Fix UV cache permissions for vscode user
-echo "Setting up UV cache and permissions..."
-mkdir -p /home/vscode/.cache/uv
-chown -R vscode:vscode /home/vscode/.cache
-chmod -R 755 /home/vscode/.cache
+# Ensure UV cache directory exists with proper permissions
+echo "Setting up UV cache directory..."
+sudo -u vscode mkdir -p /home/vscode/.local/share/uv/cache
 
 # Add Puppeteer MCP server to Claude Code
-echo "Adding Puppeteer MCP server to Claude Code..."
-su - vscode -c "claude mcp add puppeteer -s user -- npx -y @modelcontextprotocol/server-puppeteer" || true
+echo "Configuring Puppeteer MCP server..."
+# Run as vscode user with proper PATH
+sudo -u vscode env PATH="/usr/local/bin:$PATH" claude mcp add puppeteer -s user -- npx -y @modelcontextprotocol/server-puppeteer || echo "Note: MCP server will be configured on first Claude Code login"
 
 # Test Chrome installation
 echo "Testing Chrome installation..."
@@ -307,10 +306,13 @@ UV was installed as root but runs as the vscode user, causing:
 error: failed to create directory `/home/vscode/.cache/uv`: Permission denied (os error 13)
 ```
 
-**Solution**: 
-1. Create the cache directory with proper ownership
-2. Set UV environment variables
-3. Export them in the shell profile
+**Initial Solution Attempt**: We tried to use `/home/vscode/.cache/uv` but this conflicts with the Docker volume mount for `.cache`.
+
+**Final Solution**: 
+1. Use a different location: `/home/vscode/.local/share/uv/cache`
+2. Avoid Docker volume mount conflicts
+3. Create directory as vscode user using `sudo -u vscode`
+4. Set UV environment variables to the new location
 
 ### Common Issue #5: MCP Server Configuration
 

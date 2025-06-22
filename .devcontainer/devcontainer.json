@@ -40,8 +40,8 @@
   "containerEnv": {
     "PUPPETEER_SKIP_CHROMIUM_DOWNLOAD": "false",
     "PUPPETEER_EXECUTABLE_PATH": "/usr/bin/google-chrome-stable",
-    "UV_CACHE_DIR": "/home/vscode/.cache/uv",
-    "UV_PROJECT_ENVIRONMENT": "/home/vscode/.cache/uv/env"
+    "UV_CACHE_DIR": "/home/vscode/.local/share/uv/cache",
+    "UV_PROJECT_ENVIRONMENT": "/home/vscode/.local/share/uv/env"
   },
   "remoteEnv": {
     "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY:}"
