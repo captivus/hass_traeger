@@ -5,7 +5,7 @@ This container is configured for Claude Code to work in "YOLO mode" with full de
 ## Features
 
 - **Claude Code**: AI coding assistant pre-installed (`claude` or `cc` command)
-- **MCP Puppeteer Server**: Pre-configured for web automation
+- **MCP Puppeteer Server**: Automatically configured for web automation
 - **Chrome Browser**: Installed for headless/headful browser automation
 - **Python with UV**: Modern Python package management (cache in ~/.local/share/uv)
 - **Node.js 20**: For JavaScript/TypeScript development
@@ -68,17 +68,20 @@ claude --dangerously-skip-permissions --allowedTools bash,read,write,edit
 
 ## MCP Configuration
 
-The Puppeteer MCP server is automatically added during container setup using:
+The Puppeteer MCP server is automatically configured during container setup. To verify it's available:
+
+```bash
+# List configured MCP servers
+claude mcp list
+
+# Or in Claude Code interactive mode, type:
+/mcp
+```
+
+If for any reason the MCP server isn't configured, you can manually add it:
 ```bash
 claude mcp add puppeteer -s user -- npx -y @modelcontextprotocol/server-puppeteer
 ```
-
-To verify MCP servers are available:
-```bash
-claude mcp list
-```
-
-Or in Claude Code, type `/mcp` to see available servers.
 
 ## Pre-approved Commands
 
