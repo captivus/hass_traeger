@@ -68,10 +68,9 @@ venv.bak/
 
 # Project specific
 *.log
-*.db
-*.sqlite
+# *.db  # Commented out to allow database commits
+# *.sqlite  # Commented out to allow database commits
 *.csv
-*.db
 logs/
 graphite/
 
