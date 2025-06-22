@@ -1,0 +1,27 @@
+{
+  "created": "2025-06-22T19:38:53.258989",
+  "probe_types": [
+    "wired",
+    "legacy"
+  ],
+  "training_cooks": [
+    "E8EB1B4C15021750610370",
+    "E8EB1B4C15021749139580",
+    "E8EB1B4C15021748715282",
+    "E8EB1B4C15021748620109",
+    "E8EB1B4C15021748231230"
+  ],
+  "total_hours": 12.1,
+  "feature_names": [
+    "probe_temp",
+    "minutes_elapsed",
+    "temp_to_target",
+    "grill_temp",
+    "grill_to_probe",
+    "rate_1",
+    "rate_5",
+    "rate_10",
+    "temp_variance",
+    "progress_ratio"
+  ]
+}

@@ -10,6 +10,7 @@ dependencies = [
     "paho-mqtt>=2.1.0",
     "pandas>=2.3.0",
     "python-dotenv>=1.1.0",
+    "pytz==2023.3",
     "requests>=2.32.3",
     "xgboost>=3.0.2",
 ]
