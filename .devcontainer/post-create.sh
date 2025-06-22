@@ -46,19 +46,19 @@ EOF
 
 # Ensure UV cache directory exists with proper permissions
 echo "Setting up UV cache directory..."
-sudo -u vscode mkdir -p /home/vscode/.local/share/uv/cache
+mkdir -p /home/vscode/.local/share/uv/cache
 
 # Add Puppeteer MCP server to Claude Code
 echo "Configuring Puppeteer MCP server..."
-# Run as vscode user with proper PATH
-sudo -u vscode env PATH="/usr/local/bin:$PATH" claude mcp add puppeteer -s user -- npx -y @modelcontextprotocol/server-puppeteer || echo "Note: MCP server will be configured on first Claude Code login"
+# Run the MCP add command directly (we're already running as vscode user)
+claude mcp add puppeteer -s user -- npx -y @modelcontextprotocol/server-puppeteer || echo "Note: MCP server configuration may need to be run after first login"
 
 # Test Chrome installation
 echo "Testing Chrome installation..."
 google-chrome-stable --version
 
-# Set permissions on workspace
-sudo chown -R vscode:vscode /workspace
+# Note: We don't need to chown anything since we're already running as vscode user
+echo "Workspace permissions should already be correct."
 
 echo "Container setup complete!"
 echo "MCP Puppeteer server configured and ready to use."
