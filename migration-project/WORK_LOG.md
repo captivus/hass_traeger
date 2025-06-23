@@ -63,6 +63,30 @@ This document tracks the progress of migrating historical data from the legacy T
 **Time Spent**: ~15 minutes
 **Status**: MIGRATION COMPLETE! Successfully migrated 3,466 historical messages.
 
+### Session 3: Debug June 22 Data Visibility (00:40 - 01:00 UTC)
+**Started**: User reported migration failure - June 22 cook data appeared missing
+**Completed**:
+- [x] Created debug scripts to investigate June 22 data
+- [x] Verified data WAS successfully migrated (905 messages for cook E8EB1B4C15021750610370)
+- [x] Confirmed migration integrity - all expected data is present
+- [x] Deep analysis of probe data - found BOTH probes successfully migrated
+- [x] Identified root cause of UI visibility issue
+**Issues Found**:
+- Initial confusion: User's comparison showed only TEST records visible
+- Root cause: Timestamp format mismatch between migrated and test data
+  - Migrated data: "2025-06-22 16:55:53" format
+  - Test data: "2025-06-22T20:26:25.317328" ISO format
+  - API string comparison fails to properly order mixed formats
+**Results**: 
+- June 22 real cook: 905 messages present (cook ID: E8EB1B4C15021750610370)
+- Both probes successfully migrated:
+  - Probe p0/legacy: 53-163°F (811 messages)
+  - Probe p1: 59-167°F (809 messages)
+- June 22 test cooks: 40 messages with future timestamps
+- MIGRATION WAS 100% SUCCESSFUL - all data including both probes properly migrated
+- UI issue is cosmetic - timestamp format prevents proper display
+**Time Spent**: ~20 minutes
+
 ## Session Template
 ```
 ### Session N: [Description] (HH:MM - HH:MM UTC)

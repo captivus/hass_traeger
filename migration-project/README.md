@@ -1,40 +1,27 @@
 # Traeger Data Migration Project
 
-## Overview
-This project migrates historical raw message data from the legacy Traeger Stream application database to the new simplified Traeger Monitor database.
+This directory contains all scripts and documentation for migrating historical data from the legacy Traeger Stream database to the new Traeger Monitor database.
 
-## Goal
-Preserve historical cook data (180 messages from before 2025-05-30) without creating duplicates, allowing the new system to have complete historical context.
+## Migration Status: ✅ COMPLETE
 
-## Files
-- `analyze_databases.py` - Initial database schema analysis
-- `analyze_detailed.py` - Detailed analysis of both databases
-- `check_overlap.py` - Overlap and duplicate detection
-- `analyze_overlap_detail.py` - Detailed overlap period analysis
-- `migrate_raw_messages.py` - Main migration script with safety features
+Successfully migrated 3,466 historical messages from legacy to new database.
 
-## Migration Summary
-- **Legacy DB**: 4,537 messages (2025-05-26 to 2025-06-22)
-- **New DB**: 2,759 messages (2025-05-30 to 2025-06-22)
-- **To Migrate**: 180 messages from before overlap
-- **Duplicates to Skip**: 672 (based on state_index)
+## Project Structure
+- `FINAL_SUMMARY.md` - Complete migration summary and findings
+- `MIGRATION_PLAN.md` - Comprehensive migration plan (standalone document)
+- `WORK_LOG.md` - Detailed work tracking log
+- `TASKS.md` - Task tracking and status
+- `MIGRATION_LOG.md` - Migration execution log
+- `archive/` - All analysis and debug scripts organized by category
 
-## Usage
-```bash
-cd /workspaces/hass_traeger/migration-project
-python migrate_raw_messages.py
-```
+## Key Results
+- Database growth: 2,759 → 6,225 messages
+- Date range extended: May 26 to June 22
+- Both probe channels successfully migrated
+- UI visibility issue identified (timestamp format mismatch)
+- Data integrity: 100% preserved
 
-The script will:
-1. Run a dry-run first (no changes)
-2. Ask for confirmation
-3. Create a backup of the new database
-4. Migrate non-duplicate messages
-5. Report results
-
-## Safety Features
-- Dry-run mode
-- Automatic backup
-- Transaction-based (rollback on error)
-- Duplicate detection
-- JSON validation
+## Quick Reference
+- Backup location: `traeger.db.backup_20250623_002208`
+- Migration completed: 2025-06-23 00:22 UTC
+- Total time spent: ~3 hours across 3 sessions

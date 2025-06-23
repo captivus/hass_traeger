@@ -39,3 +39,13 @@ The overlap period contains mostly UNIQUE data:
 - 20 duplicate state_indexes found (low-value test data)
 - No JSON errors ✓
 - Migration successful!
+
+### Post-Migration Analysis (Session 3)
+- ✅ June 22 cook data fully migrated (905 messages)
+- ✅ Both probes successfully migrated:
+  - Probe 0: 53-163°F (811 messages)
+  - Probe 1: 59-167°F (809 messages)
+- ⚠️ UI visibility issue identified:
+  - Timestamp format mismatch (ISO vs non-ISO)
+  - Does NOT affect data integrity
+  - Fix needed in API query to handle both formats
