@@ -55,18 +55,15 @@ def migrate_raw_messages(legacy_db_path, new_db_path, dry_run=True):
         print(f"Existing records in new DB: {len(existing_state_indexes)} with state_index")
         print(f"Existing timestamp+topic combinations: {len(existing_timestamp_topics)}")
         
-        # Get messages to migrate (before overlap period)
-        overlap_start = "2025-05-30 16:22:04"
-        
+        # Get ALL messages from legacy DB (not just before overlap!)
         legacy_cursor.execute("""
             SELECT id, timestamp, topic, payload, state_index 
             FROM raw_messages 
-            WHERE timestamp < ?
             ORDER BY timestamp ASC
-        """, (overlap_start,))
+        """)
         
-        messages_to_migrate = legacy_cursor.fetchall()
-        print(f"\nMessages to migrate (before overlap): {len(messages_to_migrate)}")
+        all_legacy_messages = legacy_cursor.fetchall()
+        print(f"\nTotal messages in legacy DB: {len(all_legacy_messages)}")
         
         # Process migration
         migrated_count = 0
@@ -76,7 +73,7 @@ def migrate_raw_messages(legacy_db_path, new_db_path, dry_run=True):
         if not dry_run:
             new_conn.execute("BEGIN TRANSACTION")
         
-        for msg in messages_to_migrate:
+        for msg in all_legacy_messages:
             msg_id, timestamp, topic, payload, state_index = msg
             
             # Validate JSON payload
@@ -108,37 +105,6 @@ def migrate_raw_messages(legacy_db_path, new_db_path, dry_run=True):
                 existing_state_indexes.add(state_index)
             existing_timestamp_topics.add((timestamp, topic))
         
-        # Also check for any messages after the new DB's last timestamp
-        new_cursor.execute("SELECT MAX(timestamp) FROM raw_messages")
-        new_max_timestamp = new_cursor.fetchone()[0]
-        
-        if new_max_timestamp:
-            legacy_cursor.execute("""
-                SELECT id, timestamp, topic, payload, state_index 
-                FROM raw_messages 
-                WHERE timestamp > ?
-                ORDER BY timestamp ASC
-            """, (new_max_timestamp,))
-            
-            later_messages = legacy_cursor.fetchall()
-            if later_messages:
-                print(f"\nMessages after new DB ends: {len(later_messages)}")
-                
-                for msg in later_messages:
-                    msg_id, timestamp, topic, payload, state_index = msg
-                    
-                    if not validate_json_payload(payload):
-                        print(f"WARNING: Invalid JSON in message ID {msg_id}")
-                        invalid_json_count += 1
-                        continue
-                    
-                    if not dry_run:
-                        new_cursor.execute("""
-                            INSERT INTO raw_messages (timestamp, topic, payload, state_index)
-                            VALUES (?, ?, ?, ?)
-                        """, (timestamp, topic, payload, state_index))
-                    
-                    migrated_count += 1
         
         # Commit or rollback
         if not dry_run:
@@ -147,6 +113,7 @@ def migrate_raw_messages(legacy_db_path, new_db_path, dry_run=True):
         
         # Final statistics
         print(f"\n=== MIGRATION STATISTICS ===")
+        print(f"Messages analyzed: {len(all_legacy_messages)}")
         print(f"Messages migrated: {migrated_count}")
         print(f"Messages skipped (duplicates): {skipped_count}")
         print(f"Messages with invalid JSON: {invalid_json_count}")
