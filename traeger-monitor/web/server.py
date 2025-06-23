@@ -53,7 +53,7 @@ def serve_static(filename):
 @app.route('/api/current')
 def get_current():
     with sqlite3.connect(DB_PATH) as conn:
-        row = conn.execute("SELECT timestamp, payload FROM raw_messages ORDER BY timestamp DESC LIMIT 1").fetchone()
+        row = conn.execute("SELECT timestamp, payload FROM raw_messages ORDER BY datetime(timestamp) DESC LIMIT 1").fetchone()
         if not row: return jsonify({'error': 'No data'}), 404
         status = json.loads(row[1]).get('status', {})
         return jsonify({'timestamp': convert_to_central(row[0]), 'grill_temp': status.get('grill'), 'grill_set': status.get('set'),
@@ -64,7 +64,7 @@ def get_current():
 def get_history(hours):
     cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
     with sqlite3.connect(DB_PATH) as conn:
-        rows = conn.execute("SELECT timestamp, payload FROM raw_messages WHERE timestamp > ? ORDER BY timestamp", (cutoff,))
+        rows = conn.execute("SELECT timestamp, payload FROM raw_messages WHERE datetime(timestamp) > datetime(?) ORDER BY datetime(timestamp)", (cutoff,))
         return jsonify([{'timestamp': convert_to_central(r[0]), 'grill_temp': (s := json.loads(r[1]).get('status', {})).get('grill'),
                         'grill_set': s.get('set'), 'ambient': s.get('ambient'), 'probes': extract_probes(s)} for r in rows])
 
