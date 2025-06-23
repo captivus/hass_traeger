@@ -27,15 +27,23 @@ def convert_to_central(utc_timestamp_str):
 def extract_probes(status):
     """Extract all probe data from status."""
     probes = []
+    legacy_temp = None
+    
     # Check legacy format
     if status.get('probe_con') == 1 and status.get('probe'):
-        probes.append({'channel': 'legacy', 'temp': status['probe'], 'target': status.get('probe_set')})
+        legacy_temp = status['probe']
+        probes.append({'channel': 'legacy', 'temp': legacy_temp, 'target': status.get('probe_set')})
+    
     # Check acc array for modern probes
     for acc in status.get('acc', []):
         if acc.get('con') != 1: continue
         if acc['type'] == 'probe':
             p = acc.get('probe', {})
-            probes.append({'channel': acc['channel'], 'temp': p.get('get_temp'), 'target': p.get('set_temp')})
+            probe_temp = p.get('get_temp')
+            # Skip if this probe has same temperature as legacy (likely same physical probe)
+            if legacy_temp is not None and probe_temp == legacy_temp:
+                continue
+            probes.append({'channel': acc['channel'], 'temp': probe_temp, 'target': p.get('set_temp')})
         elif acc['type'] == 'btprobe':
             p = acc.get('btprobe', {})
             probes.append({'channel': acc['channel'], 'temp': p.get('get_temp'), 
